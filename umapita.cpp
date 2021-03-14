@@ -1,5 +1,8 @@
 #include "pch.h"
+#include "am/win32util.h"
 #include "umapita_res.h"
+
+namespace Win32 = AM::Win32;
 
 #define WM_TASKTRAY (WM_USER+0x1000)
 #define WM_SET_MONITORS (WM_USER+0x1001)
@@ -101,13 +104,16 @@ constexpr PerAlignSettingID horizontalSettingID = {
   IDC_H_OFFSET_Y,
 };
 
-static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
-  NOTIFYICONDATA nid;
-
-  memset(&nid, 0, sizeof (nid));
-  nid.cbSize = sizeof (nid);
+inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
+  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
   nid.hWnd = hWnd;
-  nid.uID = TASKTRAY_ID;
+  nid.uID = uID;
+  return nid;
+}
+
+static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
+  auto nid = make_notify_icon_data(hWnd, TASKTRAY_ID);
+
   nid.uFlags = NIF_ICON|NIF_MESSAGE|NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
@@ -116,12 +122,8 @@ static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
 }
 
 static void delete_tasktray_icon(HWND hWnd) {
-  NOTIFYICONDATA nid;
+  auto nid = make_notify_icon_data(hWnd, TASKTRAY_ID);
 
-  memset(&nid, 0, sizeof (nid));
-  nid.cbSize = sizeof (nid);
-  nid.hWnd = hWnd;
-  nid.uID = TASKTRAY_ID;
   Shell_NotifyIcon(NIM_DELETE, &nid);
 }
 
@@ -132,11 +134,10 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
 
     if (isTray) {
       RECT rect = { 0, 0, 0, 0 };
-      memset(&tpmp, 0, sizeof (tpmp));
       HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
       if (hwndShell) {
         GetWindowRect(hwndShell, &rect);
-        tpmp.cbSize = sizeof (tpmp);
+        tpmp = Win32::make_sized_pod<TPMPARAMS>();
         tpmp.rcExclude = rect;
         pTpmp = &tpmp;
       }
@@ -172,10 +173,8 @@ static HWND find_window(LPCTSTR cls, LPCTSTR name) {
 }
 
 static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
-  MONITORINFOEX mi;
   Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
-  memset(&mi, 0, sizeof (mi));
-  mi.cbSize = sizeof (mi);
+  auto mi = Win32::make_sized_pod<MONITORINFOEX>();
   GetMonitorInfo(hMonitor, &mi);
   ms.emplace_back(mi.rcMonitor, mi.szDevice, !!(mi.dwFlags & MONITORINFOF_PRIMARY));
   return TRUE;
@@ -229,9 +228,7 @@ static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
     hMenu = nullptr;
   }
   hMenu = create_monitors_menu(idbase);
-  TPMPARAMS tpmp;
-  memset(&tpmp, 0, sizeof (tpmp));
-  tpmp.cbSize = sizeof (tpmp);
+  auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   RECT rect{0, 0, 0, 0};
   GetWindowRect(GetDlgItem(hWnd, id), &rect);
   tpmp.rcExclude = rect;
@@ -245,9 +242,7 @@ static TargetStatus update_target_information(HWND hWndDialog) {
 
   wcscpy(tmp, TEXT("<target not found>"));
   if (hWndTarget) {
-    WINDOWINFO wi;
-    memset(&wi, 0, sizeof (wi));
-    wi.cbSize = sizeof (wi);
+    auto wi = Win32::make_sized_pod<WINDOWINFO>();
     if (GetWindowInfo(hWndTarget, &wi)) {
       WCHAR tmp2[100];
       LONG w = wi.rcClient.right - wi.rcClient.left;
@@ -565,10 +560,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 }
 
 static void register_main_dialog_class(HINSTANCE hInst) {
-  WNDCLASSEX wc;
-
-  memset(&wc, 0, sizeof (wc));
-  wc.cbSize = sizeof (wc);
+  auto wc = Win32::make_sized_pod<WNDCLASSEX>();
   wc.style = 0;
   wc.lpfnWndProc = reinterpret_cast<WNDPROC>(DefDlgProc);
   wc.cbClsExtra = 0;
