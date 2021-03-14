@@ -19,9 +19,12 @@ RES = $(RC_SRCS:%.rc=$(OUTDIR)/%.res)
 MANIFEST_SRCS = umapita.manifest.tmpl
 MANIFEST = $(MANIFEST_SRCS:%.manifest.tmpl=$(OUTDIR)/%.manifest)
 
-.PHONY: all clean
+.PHONY: all clean debug
 
 all: $(OUTDIR)/umapita.exe
+
+debug:
+	@$(MAKE) EXECUTION_LEVEL=asInvoker SUBSYSTEM=console OUTDIR=out.debug all
 
 _dep: $(DEPS)
 
