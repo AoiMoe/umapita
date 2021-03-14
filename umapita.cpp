@@ -44,7 +44,7 @@ constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
 template <typename Enum, std::size_t Num>
 using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
 
-struct PerAlignSetting {
+struct PerOrientationSetting {
   int monitorNumber = 0;
   enum WindowArea { Whole, Client } windowArea = Client;
   LONG size = 0;
@@ -53,52 +53,66 @@ struct PerAlignSetting {
   LONG offsetX = 0, offsetY = 0;
 };
 
-struct PerAlignSettingID {
+struct PerOrientationSettingID {
   int monitorNumber;
-  RadioButtonMap<PerAlignSetting::WindowArea, 2> windowArea;
+  RadioButtonMap<PerOrientationSetting::WindowArea, 2> windowArea;
   int size;
-  RadioButtonMap<PerAlignSetting::Axis, 2> axis;
-  RadioButtonMap<PerAlignSetting::Origin, 9> origin;
+  RadioButtonMap<PerOrientationSetting::Axis, 2> axis;
+  RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
 };
 
-PerAlignSetting verticalSetting, horizontalSetting;
-constexpr PerAlignSettingID verticalSettingID = {
+PerOrientationSetting verticalSetting, horizontalSetting;
+constexpr PerOrientationSettingID verticalSettingID = {
+  // monitorNumber
   IDC_V_MONITOR_NUMBER,
-  {{{PerAlignSetting::Whole, IDC_V_WHOLE_AREA},
-    {PerAlignSetting::Client, IDC_V_CLIENT_AREA}}},
+  // windowArea
+  {{{PerOrientationSetting::Whole, IDC_V_WHOLE_AREA},
+    {PerOrientationSetting::Client, IDC_V_CLIENT_AREA}}},
+  // size
   IDC_V_SIZE,
-  {{{PerAlignSetting::Width, IDC_V_AXIS_WIDTH},
-    {PerAlignSetting::Height, IDC_V_AXIS_HEIGHT}}},
-  {{{PerAlignSetting::N, IDC_V_ORIGIN_N},
-    {PerAlignSetting::S, IDC_V_ORIGIN_S},
-    {PerAlignSetting::W, IDC_V_ORIGIN_W},
-    {PerAlignSetting::E, IDC_V_ORIGIN_E},
-    {PerAlignSetting::NW, IDC_V_ORIGIN_NW},
-    {PerAlignSetting::NE, IDC_V_ORIGIN_NE},
-    {PerAlignSetting::SW, IDC_V_ORIGIN_SW},
-    {PerAlignSetting::SE, IDC_V_ORIGIN_SE},
-    {PerAlignSetting::C, IDC_V_ORIGIN_C}}},
+  // axis
+  {{{PerOrientationSetting::Width, IDC_V_AXIS_WIDTH},
+    {PerOrientationSetting::Height, IDC_V_AXIS_HEIGHT}}},
+  // origin
+  {{{PerOrientationSetting::N, IDC_V_ORIGIN_N},
+    {PerOrientationSetting::S, IDC_V_ORIGIN_S},
+    {PerOrientationSetting::W, IDC_V_ORIGIN_W},
+    {PerOrientationSetting::E, IDC_V_ORIGIN_E},
+    {PerOrientationSetting::NW, IDC_V_ORIGIN_NW},
+    {PerOrientationSetting::NE, IDC_V_ORIGIN_NE},
+    {PerOrientationSetting::SW, IDC_V_ORIGIN_SW},
+    {PerOrientationSetting::SE, IDC_V_ORIGIN_SE},
+    {PerOrientationSetting::C, IDC_V_ORIGIN_C}}},
+  // offsetX
   IDC_V_OFFSET_X,
+  // offsetY
   IDC_V_OFFSET_Y,
 };
-constexpr PerAlignSettingID horizontalSettingID = {
+constexpr PerOrientationSettingID horizontalSettingID = {
+  // monitorNumber
   IDC_H_MONITOR_NUMBER,
-  {{{PerAlignSetting::Whole, IDC_H_WHOLE_AREA},
-    {PerAlignSetting::Client, IDC_H_CLIENT_AREA}}},
+  // windowArea
+  {{{PerOrientationSetting::Whole, IDC_H_WHOLE_AREA},
+    {PerOrientationSetting::Client, IDC_H_CLIENT_AREA}}},
+  // size
   IDC_H_SIZE,
-  {{{PerAlignSetting::Width, IDC_H_AXIS_WIDTH},
-    {PerAlignSetting::Height, IDC_H_AXIS_HEIGHT}}},
-  {{{PerAlignSetting::N, IDC_H_ORIGIN_N},
-    {PerAlignSetting::S, IDC_H_ORIGIN_S},
-    {PerAlignSetting::W, IDC_H_ORIGIN_W},
-    {PerAlignSetting::E, IDC_H_ORIGIN_E},
-    {PerAlignSetting::NW, IDC_H_ORIGIN_NW},
-    {PerAlignSetting::NE, IDC_H_ORIGIN_NE},
-    {PerAlignSetting::SW, IDC_H_ORIGIN_SW},
-    {PerAlignSetting::SE, IDC_H_ORIGIN_SE},
-    {PerAlignSetting::C, IDC_H_ORIGIN_C}}},
+  // axis
+  {{{PerOrientationSetting::Width, IDC_H_AXIS_WIDTH},
+    {PerOrientationSetting::Height, IDC_H_AXIS_HEIGHT}}},
+  // origin
+  {{{PerOrientationSetting::N, IDC_H_ORIGIN_N},
+    {PerOrientationSetting::S, IDC_H_ORIGIN_S},
+    {PerOrientationSetting::W, IDC_H_ORIGIN_W},
+    {PerOrientationSetting::E, IDC_H_ORIGIN_E},
+    {PerOrientationSetting::NW, IDC_H_ORIGIN_NW},
+    {PerOrientationSetting::NE, IDC_H_ORIGIN_NE},
+    {PerOrientationSetting::SW, IDC_H_ORIGIN_SW},
+    {PerOrientationSetting::SE, IDC_H_ORIGIN_SE},
+    {PerOrientationSetting::C, IDC_H_ORIGIN_C}}},
+  // offsetX
   IDC_H_OFFSET_X,
+  // offsetY
   IDC_H_OFFSET_Y,
 };
 
@@ -276,7 +290,7 @@ static void update_target(HWND hWnd) {
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerAlignSetting &s = cW > cH ? horizontalSetting:verticalSetting;
+    const PerOrientationSetting &s = cW > cH ? horizontalSetting:verticalSetting;
     auto mn = s.monitorNumber + 1;
 
     if (static_cast<size_t>(mn) >= monitors.size())
@@ -288,57 +302,57 @@ static void update_target(HWND hWnd) {
 
     LONG idealCW = 0, idealCH = 0;
     switch (s.axis) {
-    case PerAlignSetting::Width: {
+    case PerOrientationSetting::Width: {
       auto sz = s.size == 0 ? mW : s.size;
-      idealCW = s.windowArea == PerAlignSetting::Client ? sz : sz - ncW;
+      idealCW = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncW;
       idealCH = cH * idealCW / cW;
       break;
     }
-    case PerAlignSetting::Height: {
+    case PerOrientationSetting::Height: {
       auto sz = s.size == 0 ? mH : s.size;
-      idealCH = s.windowArea == PerAlignSetting::Client ? sz : sz - ncH;
+      idealCH = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncH;
       idealCW = cW * idealCH / cH;
       break;
     }
     }
-    auto idealW = s.windowArea == PerAlignSetting::Client ? idealCW : idealCW + ncW;
-    auto idealH = s.windowArea == PerAlignSetting::Client ? idealCH : idealCH + ncH;
+    auto idealW = s.windowArea == PerOrientationSetting::Client ? idealCW : idealCW + ncW;
+    auto idealH = s.windowArea == PerOrientationSetting::Client ? idealCH : idealCH + ncH;
     LONG idealX = 0, idealY = 0;
     switch (s.origin) {
-    case PerAlignSetting::NW:
-    case PerAlignSetting::W:
-    case PerAlignSetting::SW:
+    case PerOrientationSetting::NW:
+    case PerOrientationSetting::W:
+    case PerOrientationSetting::SW:
       idealX = mR.left + s.offsetX;
       break;
-    case PerAlignSetting::C:
-    case PerAlignSetting::N:
-    case PerAlignSetting::S:
+    case PerOrientationSetting::C:
+    case PerOrientationSetting::N:
+    case PerOrientationSetting::S:
       idealX = mR.left + mW/2 - idealW/2  + s.offsetX;
       break;
-    case PerAlignSetting::NE:
-    case PerAlignSetting::E:
-    case PerAlignSetting::SE:
+    case PerOrientationSetting::NE:
+    case PerOrientationSetting::E:
+    case PerOrientationSetting::SE:
       idealX = mR.right - idealW - s.offsetX;
       break;
     }
     switch (s.origin) {
-    case PerAlignSetting::NW:
-    case PerAlignSetting::N:
-    case PerAlignSetting::NE:
+    case PerOrientationSetting::NW:
+    case PerOrientationSetting::N:
+    case PerOrientationSetting::NE:
       idealY = mR.top + s.offsetY;
       break;
-    case PerAlignSetting::C:
-    case PerAlignSetting::W:
-    case PerAlignSetting::E:
+    case PerOrientationSetting::C:
+    case PerOrientationSetting::W:
+    case PerOrientationSetting::E:
       idealY = mR.top + mH/2 - idealH/2 + s.offsetY;
       break;
-    case PerAlignSetting::SW:
-    case PerAlignSetting::S:
-    case PerAlignSetting::SE:
+    case PerOrientationSetting::SW:
+    case PerOrientationSetting::S:
+    case PerOrientationSetting::SE:
       idealY = mR.bottom - idealH - s.offsetY;
       break;
     }
-    if (s.windowArea == PerAlignSetting::Client) {
+    if (s.windowArea == PerOrientationSetting::Client) {
       idealX += ncX;
       idealY += ncY;
       idealW += ncW;
@@ -392,7 +406,7 @@ static void set_monitor_number(HWND hWnd, int id, int num) {
   SetWindowText(GetDlgItem(hWnd, id), buf);
 }
 
-static void init_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, const PerAlignSetting &setting) {
+static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, const PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto setint = [get](auto id, int v) {
                   WCHAR buf[256];
@@ -409,7 +423,7 @@ static void init_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, con
   setint(ids.offsetY, setting.offsetY);
 }
 
-static void get_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, PerAlignSetting & setting) {
+static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto getint = [get](auto id) {
                   WCHAR buf[256];
@@ -427,14 +441,14 @@ static void get_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, PerA
 
 static void init_main_controlls(HWND hWnd) {
   set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), isEnabled);
-  init_per_align_settings(hWnd, verticalSettingID, verticalSetting);
-  init_per_align_settings(hWnd, horizontalSettingID, horizontalSetting);
+  init_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
+  init_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
 }
 
 static void update_dialog_items(HWND hWnd) {
   isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_align_settings(hWnd, verticalSettingID, verticalSetting);
-  get_per_align_settings(hWnd, horizontalSettingID, horizontalSetting);
+  get_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
+  get_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
