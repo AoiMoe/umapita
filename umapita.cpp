@@ -14,8 +14,6 @@ namespace Win32 = AM::Win32;
 #define MIN_WIDTH 100
 #define MIN_HEIGHT 100
 
-#define NumOf(array) (sizeof (array) / sizeof (array[0]))
-
 using Monitor = std::tuple<RECT, std::wstring, BOOL>;
 using Monitors = std::vector<Monitor>;
 
@@ -117,7 +115,7 @@ static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
   nid.uFlags = NIF_ICON|NIF_MESSAGE|NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
-  LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, NumOf(nid.szTip));
+  LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
   return Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -158,8 +156,8 @@ using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
 static BOOL CALLBACK find_window_callback(HWND hWnd, LPARAM lParam) {
   auto &[rhWnd, cls, name] = *reinterpret_cast<FindWindowResult *>(lParam);
   WCHAR tmp[128];
-  if ((!cls || (GetClassName(hWnd, tmp, NumOf(tmp)) && !wcscmp(tmp, cls))) &&
-      (!name || (GetWindowText(hWnd, tmp, NumOf(tmp)) && !wcscmp(tmp, name)))) {
+  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !wcscmp(tmp, cls))) &&
+      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !wcscmp(tmp, name)))) {
     rhWnd = hWnd;
     return FALSE;
   }
@@ -247,7 +245,7 @@ static TargetStatus update_target_information(HWND hWndDialog) {
       WCHAR tmp2[100];
       LONG w = wi.rcClient.right - wi.rcClient.left;
       LONG h = wi.rcClient.bottom - wi.rcClient.top;
-      LoadString(hInstance, w > h ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, NumOf(tmp2));
+      LoadString(hInstance, w > h ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
       wsprintf(tmp,
                TEXT("id=0x%08X (%ld,%ld)-(%ld,%ld) / (%ld,%ld)-(%ld,%ld) (%ls)"),
                static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(hWndTarget)),
@@ -415,7 +413,7 @@ static void get_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, PerA
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto getint = [get](auto id) {
                   WCHAR buf[256];
-                  GetWindowText(get(id), buf, NumOf(buf));
+                  GetWindowText(get(id), buf, std::size(buf));
                   return wcstol(buf, nullptr, 10);
                 };
   setting.monitorNumber = getint(ids.monitorNumber);
@@ -445,7 +443,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
     WCHAR tmp[128];
-    LoadString(hInstance, IDS_QUIT, tmp, NumOf(tmp));
+    LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
     AppendMenu(hMenu, MF_ENABLED|MF_STRING, IDC_QUIT, tmp);
     // disable close button / menu
