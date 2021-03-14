@@ -586,11 +586,12 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
   hAppIcon = LoadIcon(nullptr, IDI_WINLOGO);
 
   HWND hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
-  for (MSG msg; GetMessage(&msg, nullptr, 0, 0); ) {
+  MSG msg;
+  while (GetMessage(&msg, nullptr, 0, 0)) {
     if (IsDialogMessage(hWnd, &msg))
       continue;
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
-  return 0;
+  return msg.wParam;
 }
