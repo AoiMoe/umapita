@@ -169,9 +169,9 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
 using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
 static BOOL CALLBACK find_window_callback(HWND hWnd, LPARAM lParam) {
   auto &[rhWnd, cls, name] = *reinterpret_cast<FindWindowResult *>(lParam);
-  WCHAR tmp[128];
-  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !wcscmp(tmp, cls))) &&
-      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !wcscmp(tmp, name)))) {
+  TCHAR tmp[128];
+  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, cls))) &&
+      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, name)))) {
     rhWnd = hWnd;
     return FALSE;
   }
@@ -225,9 +225,9 @@ static HMENU create_monitors_menu(int idbase) {
   int index = -1;
 
   for (auto const & [rect, name, isprimary] : monitors) {
-    WCHAR tmp[1024];
-    wsprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-             index++, rect.left, rect.top, rect.right, rect.bottom, name.c_str());
+    TCHAR tmp[1024];
+    _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
+              index++, rect.left, rect.top, rect.right, rect.bottom, name.c_str());
     AppendMenu(hMenu, MF_STRING, id++, tmp);
   }
 
@@ -250,22 +250,22 @@ static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
 static TargetStatus update_target_information(HWND hWndDialog) {
   TargetStatus ret;
   HWND hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME);
-  WCHAR tmp[256];
+  TCHAR tmp[256];
 
-  wcscpy(tmp, TEXT("<target not found>"));
+  _tcscpy(tmp, TEXT("<target not found>"));
   if (hWndTarget) {
     auto wi = Win32::make_sized_pod<WINDOWINFO>();
     if (GetWindowInfo(hWndTarget, &wi)) {
-      WCHAR tmp2[100];
+      TCHAR tmp2[100];
       LONG w = wi.rcClient.right - wi.rcClient.left;
       LONG h = wi.rcClient.bottom - wi.rcClient.top;
       LoadString(hInstance, w > h ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
-      wsprintf(tmp,
-               TEXT("id=0x%08X (%ld,%ld)-(%ld,%ld) / (%ld,%ld)-(%ld,%ld) (%ls)"),
-               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(hWndTarget)),
-               wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right, wi.rcWindow.bottom,
-               wi.rcClient.left, wi.rcClient.top, wi.rcClient.right, wi.rcClient.bottom,
-               tmp2);
+      _stprintf(tmp,
+                TEXT("id=0x%08X (%ld,%ld)-(%ld,%ld) / (%ld,%ld)-(%ld,%ld) (%ls)"),
+                static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(hWndTarget)),
+                wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right, wi.rcWindow.bottom,
+                wi.rcClient.left, wi.rcClient.top, wi.rcClient.right, wi.rcClient.bottom,
+                tmp2);
       ret.hWnd = hWndTarget;
       ret.windowRect = wi.rcWindow;
       ret.clientRect = wi.rcClient;
@@ -401,16 +401,16 @@ static Enum get_check_button(HWND hWnd, const CheckButtonMap<Enum> &m) {
 }
 
 static void set_monitor_number(HWND hWnd, int id, int num) {
-  WCHAR buf[256];
-  wsprintf(buf, TEXT("%d"), num);
+  TCHAR buf[256];
+  _stprintf(buf, TEXT("%d"), num);
   SetWindowText(GetDlgItem(hWnd, id), buf);
 }
 
 static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, const PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto setint = [get](auto id, int v) {
-                  WCHAR buf[256];
-                  wsprintf(buf, TEXT("%d"), v);
+                  TCHAR buf[256];
+                  _stprintf(buf, TEXT("%d"), v);
                   SetWindowText(get(id), buf);
                 };
 
@@ -426,9 +426,9 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
 static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto getint = [get](auto id) {
-                  WCHAR buf[256];
+                  TCHAR buf[256];
                   GetWindowText(get(id), buf, std::size(buf));
-                  return wcstol(buf, nullptr, 10);
+                  return _tcstol(buf, nullptr, 10);
                 };
   setting.monitorNumber = getint(ids.monitorNumber);
   setting.windowArea = get_radio_buttons(hWnd, ids.windowArea);
@@ -456,7 +456,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   case WM_INITDIALOG: {
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
-    WCHAR tmp[128];
+    TCHAR tmp[128];
     LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
     AppendMenu(hMenu, MF_ENABLED|MF_STRING, IDC_QUIT, tmp);
