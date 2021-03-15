@@ -3,9 +3,10 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
-#include <wchar.h>
+#include <tchar.h>
 #include <vector>
 #include <utility>
 #include <tuple>
 #include <string>
 #include <algorithm>
+#include <iterator>

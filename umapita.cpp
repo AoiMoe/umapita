@@ -1,17 +1,17 @@
 #include "pch.h"
+#include "am/win32util.h"
 #include "umapita_res.h"
 
-#define WM_TASKTRAY (WM_USER+0x1000)
-#define WM_SET_MONITORS (WM_USER+0x1001)
-#define TASKTRAY_ID 1
-#define TIMER_ID 1
-#define TIMER_PERIOD 500
-#define TARGET_WINDOW_CLASS TEXT("UnityWndClass")
-#define TARGET_WINDOW_NAME TEXT("umamusume")
-#define MIN_WIDTH 100
-#define MIN_HEIGHT 100
+namespace Win32 = AM::Win32;
 
-#define NumOf(array) (sizeof (array) / sizeof (array[0]))
+constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
+constexpr UINT TASKTRAY_ID = 1;
+constexpr UINT TIMER_ID = 1;
+constexpr UINT TIMER_PERIOD = 200;
+constexpr const LPCTSTR TARGET_WINDOW_CLASS = TEXT("UnityWndClass");
+constexpr const LPCTSTR TARGET_WINDOW_NAME = TEXT("umamusume");
+constexpr int MIN_WIDTH = 100;
+constexpr int MIN_HEIGHT = 100;
 
 using Monitor = std::tuple<RECT, std::wstring, BOOL>;
 using Monitors = std::vector<Monitor>;
@@ -21,13 +21,17 @@ UINT msgTaskbarCreated = 0;
 HICON hAppIcon = nullptr;
 Monitors monitors;
 bool isEnabled = true;
-bool isChanged = false;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 
 struct TargetStatus {
   HWND hWnd = nullptr;
-  RECT windowRect{0, 0, 0, 0}, clientRect{0, 0, 0, 0};
+  RECT windowRect{0, 0, 0, 0};
+  RECT clientRect{0, 0, 0, 0};
 };
+inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
+  using namespace AM::Win32::Op;
+  return lhs.hWnd && lhs.hWnd == rhs.hWnd && lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect;
+}
 
 template <typename Enum>
 struct CheckButtonMap {
@@ -43,85 +47,101 @@ constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
 template <typename Enum, std::size_t Num>
 using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
 
-struct PerAlignSetting {
+struct PerOrientationSetting {
   int monitorNumber = 0;
   enum WindowArea { Whole, Client } windowArea = Client;
   LONG size = 0;
   enum Axis { Width, Height } axis = Height;
   enum Origin { N, S, W, E, NW, NE, SW, SE, C } origin = N;
   LONG offsetX = 0, offsetY = 0;
+  LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
+  PerOrientationSetting(LONG aX, LONG aY) : aspectX{aX}, aspectY{aY} { }
 };
 
-struct PerAlignSettingID {
+struct PerOrientationSettingID {
   int monitorNumber;
-  RadioButtonMap<PerAlignSetting::WindowArea, 2> windowArea;
+  RadioButtonMap<PerOrientationSetting::WindowArea, 2> windowArea;
   int size;
-  RadioButtonMap<PerAlignSetting::Axis, 2> axis;
-  RadioButtonMap<PerAlignSetting::Origin, 9> origin;
+  RadioButtonMap<PerOrientationSetting::Axis, 2> axis;
+  RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
 };
 
-PerAlignSetting verticalSetting, horizontalSetting;
-constexpr PerAlignSettingID verticalSettingID = {
+PerOrientationSetting verticalSetting{9, 16}, horizontalSetting{16, 9};
+
+constexpr PerOrientationSettingID verticalSettingID = {
+  // monitorNumber
   IDC_V_MONITOR_NUMBER,
-  {{{PerAlignSetting::Whole, IDC_V_WHOLE_AREA},
-    {PerAlignSetting::Client, IDC_V_CLIENT_AREA}}},
+  // windowArea
+  {{{PerOrientationSetting::Whole, IDC_V_WHOLE_AREA},
+    {PerOrientationSetting::Client, IDC_V_CLIENT_AREA}}},
+  // size
   IDC_V_SIZE,
-  {{{PerAlignSetting::Width, IDC_V_AXIS_WIDTH},
-    {PerAlignSetting::Height, IDC_V_AXIS_HEIGHT}}},
-  {{{PerAlignSetting::N, IDC_V_ORIGIN_N},
-    {PerAlignSetting::S, IDC_V_ORIGIN_S},
-    {PerAlignSetting::W, IDC_V_ORIGIN_W},
-    {PerAlignSetting::E, IDC_V_ORIGIN_E},
-    {PerAlignSetting::NW, IDC_V_ORIGIN_NW},
-    {PerAlignSetting::NE, IDC_V_ORIGIN_NE},
-    {PerAlignSetting::SW, IDC_V_ORIGIN_SW},
-    {PerAlignSetting::SE, IDC_V_ORIGIN_SE},
-    {PerAlignSetting::C, IDC_V_ORIGIN_C}}},
+  // axis
+  {{{PerOrientationSetting::Width, IDC_V_AXIS_WIDTH},
+    {PerOrientationSetting::Height, IDC_V_AXIS_HEIGHT}}},
+  // origin
+  {{{PerOrientationSetting::N, IDC_V_ORIGIN_N},
+    {PerOrientationSetting::S, IDC_V_ORIGIN_S},
+    {PerOrientationSetting::W, IDC_V_ORIGIN_W},
+    {PerOrientationSetting::E, IDC_V_ORIGIN_E},
+    {PerOrientationSetting::NW, IDC_V_ORIGIN_NW},
+    {PerOrientationSetting::NE, IDC_V_ORIGIN_NE},
+    {PerOrientationSetting::SW, IDC_V_ORIGIN_SW},
+    {PerOrientationSetting::SE, IDC_V_ORIGIN_SE},
+    {PerOrientationSetting::C, IDC_V_ORIGIN_C}}},
+  // offsetX
   IDC_V_OFFSET_X,
+  // offsetY
   IDC_V_OFFSET_Y,
 };
-constexpr PerAlignSettingID horizontalSettingID = {
+constexpr PerOrientationSettingID horizontalSettingID = {
+  // monitorNumber
   IDC_H_MONITOR_NUMBER,
-  {{{PerAlignSetting::Whole, IDC_H_WHOLE_AREA},
-    {PerAlignSetting::Client, IDC_H_CLIENT_AREA}}},
+  // windowArea
+  {{{PerOrientationSetting::Whole, IDC_H_WHOLE_AREA},
+    {PerOrientationSetting::Client, IDC_H_CLIENT_AREA}}},
+  // size
   IDC_H_SIZE,
-  {{{PerAlignSetting::Width, IDC_H_AXIS_WIDTH},
-    {PerAlignSetting::Height, IDC_H_AXIS_HEIGHT}}},
-  {{{PerAlignSetting::N, IDC_H_ORIGIN_N},
-    {PerAlignSetting::S, IDC_H_ORIGIN_S},
-    {PerAlignSetting::W, IDC_H_ORIGIN_W},
-    {PerAlignSetting::E, IDC_H_ORIGIN_E},
-    {PerAlignSetting::NW, IDC_H_ORIGIN_NW},
-    {PerAlignSetting::NE, IDC_H_ORIGIN_NE},
-    {PerAlignSetting::SW, IDC_H_ORIGIN_SW},
-    {PerAlignSetting::SE, IDC_H_ORIGIN_SE},
-    {PerAlignSetting::C, IDC_H_ORIGIN_C}}},
+  // axis
+  {{{PerOrientationSetting::Width, IDC_H_AXIS_WIDTH},
+    {PerOrientationSetting::Height, IDC_H_AXIS_HEIGHT}}},
+  // origin
+  {{{PerOrientationSetting::N, IDC_H_ORIGIN_N},
+    {PerOrientationSetting::S, IDC_H_ORIGIN_S},
+    {PerOrientationSetting::W, IDC_H_ORIGIN_W},
+    {PerOrientationSetting::E, IDC_H_ORIGIN_E},
+    {PerOrientationSetting::NW, IDC_H_ORIGIN_NW},
+    {PerOrientationSetting::NE, IDC_H_ORIGIN_NE},
+    {PerOrientationSetting::SW, IDC_H_ORIGIN_SW},
+    {PerOrientationSetting::SE, IDC_H_ORIGIN_SE},
+    {PerOrientationSetting::C, IDC_H_ORIGIN_C}}},
+  // offsetX
   IDC_H_OFFSET_X,
+  // offsetY
   IDC_H_OFFSET_Y,
 };
 
-static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
-  NOTIFYICONDATA nid;
-
-  memset(&nid, 0, sizeof (nid));
-  nid.cbSize = sizeof (nid);
+inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
+  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
   nid.hWnd = hWnd;
-  nid.uID = TASKTRAY_ID;
-  nid.uFlags = NIF_ICON|NIF_MESSAGE|NIF_TIP;
+  nid.uID = uID;
+  return nid;
+}
+
+static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
+  auto nid = make_notify_icon_data(hWnd, TASKTRAY_ID);
+
+  nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
-  LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, NumOf(nid.szTip));
+  LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
   return Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
 static void delete_tasktray_icon(HWND hWnd) {
-  NOTIFYICONDATA nid;
+  auto nid = make_notify_icon_data(hWnd, TASKTRAY_ID);
 
-  memset(&nid, 0, sizeof (nid));
-  nid.cbSize = sizeof (nid);
-  nid.hWnd = hWnd;
-  nid.uID = TASKTRAY_ID;
   Shell_NotifyIcon(NIM_DELETE, &nid);
 }
 
@@ -132,11 +152,10 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
 
     if (isTray) {
       RECT rect = { 0, 0, 0, 0 };
-      memset(&tpmp, 0, sizeof (tpmp));
       HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
       if (hwndShell) {
         GetWindowRect(hwndShell, &rect);
-        tpmp.cbSize = sizeof (tpmp);
+        tpmp = Win32::make_sized_pod<TPMPARAMS>();
         tpmp.rcExclude = rect;
         pTpmp = &tpmp;
       }
@@ -148,7 +167,7 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
     hMenu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
     hTasktrayMenu = GetSubMenu(hMenu, 0);
     TrackPopupMenuEx(hTasktrayMenu,
-                     TPM_LEFTALIGN|TPM_LEFTBUTTON, point.x, point.y,
+                     TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y,
                      hWnd, pTpmp);
     DestroyMenu(hMenu);
 }
@@ -156,9 +175,9 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
 using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
 static BOOL CALLBACK find_window_callback(HWND hWnd, LPARAM lParam) {
   auto &[rhWnd, cls, name] = *reinterpret_cast<FindWindowResult *>(lParam);
-  WCHAR tmp[128];
-  if ((!cls || (GetClassName(hWnd, tmp, NumOf(tmp)) && !wcscmp(tmp, cls))) &&
-      (!name || (GetWindowText(hWnd, tmp, NumOf(tmp)) && !wcscmp(tmp, name)))) {
+  TCHAR tmp[128];
+  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, cls))) &&
+      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, name)))) {
     rhWnd = hWnd;
     return FALSE;
   }
@@ -172,10 +191,8 @@ static HWND find_window(LPCTSTR cls, LPCTSTR name) {
 }
 
 static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
-  MONITORINFOEX mi;
   Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
-  memset(&mi, 0, sizeof (mi));
-  mi.cbSize = sizeof (mi);
+  auto mi = Win32::make_sized_pod<MONITORINFOEX>();
   GetMonitorInfo(hMonitor, &mi);
   ms.emplace_back(mi.rcMonitor, mi.szDevice, !!(mi.dwFlags & MONITORINFOF_PRIMARY));
   return TRUE;
@@ -214,9 +231,9 @@ static HMENU create_monitors_menu(int idbase) {
   int index = -1;
 
   for (auto const & [rect, name, isprimary] : monitors) {
-    WCHAR tmp[1024];
-    wsprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-             index++, rect.left, rect.top, rect.right, rect.bottom, name.c_str());
+    TCHAR tmp[1024];
+    _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
+              index++, rect.left, rect.top, rect.right, rect.bottom, name.c_str());
     AppendMenu(hMenu, MF_STRING, id++, tmp);
   }
 
@@ -229,138 +246,149 @@ static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
     hMenu = nullptr;
   }
   hMenu = create_monitors_menu(idbase);
-  TPMPARAMS tpmp;
-  memset(&tpmp, 0, sizeof (tpmp));
-  tpmp.cbSize = sizeof (tpmp);
+  auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   RECT rect{0, 0, 0, 0};
   GetWindowRect(GetDlgItem(hWnd, id), &rect);
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN|TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
+  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
 }
 
-static TargetStatus update_target_information(HWND hWndDialog) {
-  TargetStatus ret;
-  HWND hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME);
-  WCHAR tmp[256];
+static const Monitor *get_current_monitor(int monitorNumber) {
+  auto mn = monitorNumber + 1;
 
-  wcscpy(tmp, TEXT("<target not found>"));
-  if (hWndTarget) {
-    WINDOWINFO wi;
-    memset(&wi, 0, sizeof (wi));
-    wi.cbSize = sizeof (wi);
-    if (GetWindowInfo(hWndTarget, &wi)) {
-      WCHAR tmp2[100];
-      LONG w = wi.rcClient.right - wi.rcClient.left;
-      LONG h = wi.rcClient.bottom - wi.rcClient.top;
-      LoadString(hInstance, w > h ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, NumOf(tmp2));
-      wsprintf(tmp,
-               TEXT("id=0x%08X (%ld,%ld)-(%ld,%ld) / (%ld,%ld)-(%ld,%ld) (%ls)"),
-               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(hWndTarget)),
-               wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right, wi.rcWindow.bottom,
-               wi.rcClient.left, wi.rcClient.top, wi.rcClient.right, wi.rcClient.bottom,
-               tmp2);
-      ret.hWnd = hWndTarget;
-      ret.windowRect = wi.rcWindow;
-      ret.clientRect = wi.rcClient;
-    }
+  if (mn < 0 || static_cast<size_t>(mn) >= monitors.size())
+    return NULL;
+
+  return &monitors[mn];
+}
+
+static TargetStatus get_target_information() {
+  if (auto hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
+    auto wi = Win32::make_sized_pod<WINDOWINFO>();
+    if (GetWindowInfo(hWndTarget, &wi))
+      return {hWndTarget, wi.rcWindow, wi.rcClient};
   }
-  SetWindowText(GetDlgItem(hWndDialog, IDC_TARGET_STATUS), tmp);
-  return ret;
+  return {};
 }
 
-inline auto width(const RECT &r) -> auto { return r.right - r.left; }
-inline auto height(const RECT &r) -> auto { return r.bottom - r.top; }
+struct AdjustTargetResult {
+  bool isChanged;
+  TargetStatus targetStatus;
+};
 
-static void update_target(HWND hWnd) {
-  TargetStatus ts = update_target_information(hWnd);
+static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) {
+  static TargetStatus lastTargetStatus;
+
+  // ターゲット情報の更新
+  TargetStatus ts = get_target_information();
+
+  // ターゲットも設定も変更されていない場合は終了
+  if (!isSettingChanged && ts == lastTargetStatus)
+    return {false, {}};
+
+  lastTargetStatus = ts;
 
   if (isEnabled && ts.hWnd && IsWindowVisible(ts.hWnd)) {
-    auto cW = width(ts.clientRect);
-    auto cH = height(ts.clientRect);
-    auto wW = width(ts.windowRect);
-    auto wH = height(ts.windowRect);
+    // ターゲットのジオメトリを更新する
+    auto cW = Win32::width(ts.clientRect);
+    auto cH = Win32::height(ts.clientRect);
+    auto wW = Win32::width(ts.windowRect);
+    auto wH = Win32::height(ts.windowRect);
+    // ncX, ncY : クライアント領域の左上端を原点とした非クライアント領域の左上端（一般に負）
+    // ncW, ncH : クライアント領域の占める幅と高さ（両サイドの和）
     auto ncX = ts.windowRect.left - ts.clientRect.left;
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerAlignSetting &s = cW > cH ? horizontalSetting:verticalSetting;
-    auto mn = s.monitorNumber + 1;
+    const PerOrientationSetting &s = cW > cH ? horizontalSetting:verticalSetting;
 
-    if (static_cast<size_t>(mn) >= monitors.size())
-      return;
+    auto pMonitor = get_current_monitor(s.monitorNumber);
+    if (!pMonitor)
+      return {true, lastTargetStatus};
 
-    auto const &mR = std::get<RECT>(monitors[mn]);
-    auto mW = width(mR);
-    auto mH = height(mR);
+    auto mR = std::get<RECT>(*pMonitor);
+    auto [mW, mH] = Win32::extent(mR);
 
+    // idealCW, idealCH : 理想のクライアント領域サイズ
+    // 縦横比は s.windowArea の設定に関係なくクライアント領域の縦横比で固定されるため、
+    // ひとまず s.size をクライアント領域のサイズに換算してクライアント領域の W, H を求める
     LONG idealCW = 0, idealCH = 0;
     switch (s.axis) {
-    case PerAlignSetting::Width: {
+    case PerOrientationSetting::Width: {
       auto sz = s.size == 0 ? mW : s.size;
-      idealCW = s.windowArea == PerAlignSetting::Client ? sz : sz - ncW;
-      idealCH = cH * idealCW / cW;
+      idealCW = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncW;
+      idealCH = s.aspectY * idealCW / s.aspectX;
       break;
     }
-    case PerAlignSetting::Height: {
+    case PerOrientationSetting::Height: {
       auto sz = s.size == 0 ? mH : s.size;
-      idealCH = s.windowArea == PerAlignSetting::Client ? sz : sz - ncH;
-      idealCW = cW * idealCH / cH;
+      idealCH = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncH;
+      idealCW = s.aspectX * idealCH / s.aspectY;
       break;
     }
     }
-    auto idealW = s.windowArea == PerAlignSetting::Client ? idealCW : idealCW + ncW;
-    auto idealH = s.windowArea == PerAlignSetting::Client ? idealCH : idealCH + ncH;
+
+    // 原点に対してウィンドウを配置する
+    // idealX, idealY, idealW, idealH : s.windowArea の設定により、ウィンドウ領域またはクライアント領域の座標値
     LONG idealX = 0, idealY = 0;
+    auto idealW = s.windowArea == PerOrientationSetting::Client ? idealCW : idealCW + ncW;
+    auto idealH = s.windowArea == PerOrientationSetting::Client ? idealCH : idealCH + ncH;
     switch (s.origin) {
-    case PerAlignSetting::NW:
-    case PerAlignSetting::W:
-    case PerAlignSetting::SW:
+    case PerOrientationSetting::NW:
+    case PerOrientationSetting::W:
+    case PerOrientationSetting::SW:
       idealX = mR.left + s.offsetX;
       break;
-    case PerAlignSetting::C:
-    case PerAlignSetting::N:
-    case PerAlignSetting::S:
+    case PerOrientationSetting::C:
+    case PerOrientationSetting::N:
+    case PerOrientationSetting::S:
       idealX = mR.left + mW/2 - idealW/2  + s.offsetX;
       break;
-    case PerAlignSetting::NE:
-    case PerAlignSetting::E:
-    case PerAlignSetting::SE:
+    case PerOrientationSetting::NE:
+    case PerOrientationSetting::E:
+    case PerOrientationSetting::SE:
       idealX = mR.right - idealW - s.offsetX;
       break;
     }
     switch (s.origin) {
-    case PerAlignSetting::NW:
-    case PerAlignSetting::N:
-    case PerAlignSetting::NE:
+    case PerOrientationSetting::NW:
+    case PerOrientationSetting::N:
+    case PerOrientationSetting::NE:
       idealY = mR.top + s.offsetY;
       break;
-    case PerAlignSetting::C:
-    case PerAlignSetting::W:
-    case PerAlignSetting::E:
+    case PerOrientationSetting::C:
+    case PerOrientationSetting::W:
+    case PerOrientationSetting::E:
       idealY = mR.top + mH/2 - idealH/2 + s.offsetY;
       break;
-    case PerAlignSetting::SW:
-    case PerAlignSetting::S:
-    case PerAlignSetting::SE:
+    case PerOrientationSetting::SW:
+    case PerOrientationSetting::S:
+    case PerOrientationSetting::SE:
       idealY = mR.bottom - idealH - s.offsetY;
       break;
     }
-    if (s.windowArea == PerAlignSetting::Client) {
+
+    // idealX, idealY, idealW, idealH をウィンドウ全体領域に換算する
+    if (s.windowArea == PerOrientationSetting::Client) {
       idealX += ncX;
       idealY += ncY;
       idealW += ncW;
       idealH += ncH;
     }
-    if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top ||
-         idealW != wW || idealH != wH) &&
+    // idealCX, idealCY : クライアント領域の左上の座標値を計算する
+    auto idealCX = idealX - ncX;
+    auto idealCY = idealY - ncY;
+    printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
+    if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top || idealW != wW || idealH != wH) &&
         idealW > MIN_WIDTH && idealH > MIN_HEIGHT) {
-      if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH,
-                        SWP_NOACTIVATE | SWP_NOZORDER)) {
+      if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH, SWP_NOACTIVATE | SWP_NOZORDER)) {
         printf("failed: %lu\n", GetLastError());
       }
-      printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
+      lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
+      lastTargetStatus.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
     }
   }
+  return {true, lastTargetStatus};
 }
 
 template <typename Enum, std::size_t Num>
@@ -394,16 +422,16 @@ static Enum get_check_button(HWND hWnd, const CheckButtonMap<Enum> &m) {
 }
 
 static void set_monitor_number(HWND hWnd, int id, int num) {
-  WCHAR buf[256];
-  wsprintf(buf, TEXT("%d"), num);
+  TCHAR buf[256];
+  _stprintf(buf, TEXT("%d"), num);
   SetWindowText(GetDlgItem(hWnd, id), buf);
 }
 
-static void init_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, const PerAlignSetting &setting) {
+static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, const PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto setint = [get](auto id, int v) {
-                  WCHAR buf[256];
-                  wsprintf(buf, TEXT("%d"), v);
+                  TCHAR buf[256];
+                  _stprintf(buf, TEXT("%d"), v);
                   SetWindowText(get(id), buf);
                 };
 
@@ -416,12 +444,12 @@ static void init_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, con
   setint(ids.offsetY, setting.offsetY);
 }
 
-static void get_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, PerAlignSetting & setting) {
+static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto getint = [get](auto id) {
-                  WCHAR buf[256];
-                  GetWindowText(get(id), buf, NumOf(buf));
-                  return wcstol(buf, nullptr, 10);
+                  TCHAR buf[256];
+                  GetWindowText(get(id), buf, std::size(buf));
+                  return _tcstol(buf, nullptr, 10);
                 };
   setting.monitorNumber = getint(ids.monitorNumber);
   setting.windowArea = get_radio_buttons(hWnd, ids.windowArea);
@@ -434,25 +462,53 @@ static void get_per_align_settings(HWND hWnd, const PerAlignSettingID &ids, PerA
 
 static void init_main_controlls(HWND hWnd) {
   set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), isEnabled);
-  init_per_align_settings(hWnd, verticalSettingID, verticalSetting);
-  init_per_align_settings(hWnd, horizontalSettingID, horizontalSetting);
+  init_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
+  init_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
 }
 
-static void update_dialog_items(HWND hWnd) {
+static void on_update_dialog_items(HWND hWnd) {
   isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_align_settings(hWnd, verticalSettingID, verticalSetting);
-  get_per_align_settings(hWnd, horizontalSettingID, horizontalSetting);
+  get_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
+  get_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
+}
+
+static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
+  TCHAR tmp[256];
+  bool isHorizontal = false, isVertical = false;
+  _tcscpy(tmp, TEXT("<target not found>"));
+  if (ts.hWnd) {
+    auto cW = Win32::width(ts.clientRect);
+    auto cH = Win32::height(ts.clientRect);
+    auto wW = Win32::width(ts.windowRect);
+    auto wH = Win32::height(ts.windowRect);
+    TCHAR tmp2[100];
+    isHorizontal = cW > cH;
+    isVertical = !isHorizontal;
+    LoadString(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
+    _stprintf(tmp,
+              TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
+              static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
+              ts.windowRect.left, ts.windowRect.top, wW, wH,
+              ts.clientRect.left, ts.clientRect.top, cW, cH,
+              tmp2);
+  }
+  SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
+  LoadString(hInstance, isVertical ? IDS_FOCUSED_ORIGIN_VERTICAL:IDS_ORIGIN_VERTICAL, tmp, std::size(tmp));
+  SetWindowText(GetDlgItem(hWnd, IDC_V_GROUPBOX), tmp);
+  LoadString(hInstance, isHorizontal ? IDS_FOCUSED_ORIGIN_HORIZONTAL:IDS_ORIGIN_HORIZONTAL, tmp, std::size(tmp));
+  SetWindowText(GetDlgItem(hWnd, IDC_H_GROUPBOX), tmp);
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  static bool isDialogChanged = false;
   switch (msg) {
   case WM_INITDIALOG: {
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
-    WCHAR tmp[128];
-    LoadString(hInstance, IDS_QUIT, tmp, NumOf(tmp));
+    TCHAR tmp[128];
+    LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED|MF_STRING, IDC_QUIT, tmp);
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, tmp);
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
@@ -499,7 +555,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   case WM_COMMAND: {
     UINT id = LOWORD(wParam);
     if (id >= IDC_BEGIN && id <= IDC_END)
-      isChanged = true;
+      isDialogChanged = true;
     switch (id) {
     case IDC_HIDE:
       ShowWindow(hWnd, SW_HIDE);
@@ -526,12 +582,12 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
     }
     if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
-      isChanged = true;
+      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
       return TRUE;
     }
     if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + monitors.size()) {
-      isChanged = true;
+      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
       return TRUE;
     }
@@ -543,11 +599,11 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return TRUE;
 
   case WM_TIMER:
-    if (isChanged) {
-      update_dialog_items(hWnd);
-      isChanged = false;
-    }
-    update_target(hWnd);
+    if (isDialogChanged)
+      on_update_dialog_items(hWnd);
+    if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged)
+      update_target_status_text(hWnd, r.targetStatus);
+    isDialogChanged = false;
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
 
@@ -565,10 +621,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 }
 
 static void register_main_dialog_class(HINSTANCE hInst) {
-  WNDCLASSEX wc;
-
-  memset(&wc, 0, sizeof (wc));
-  wc.cbSize = sizeof (wc);
+  auto wc = Win32::make_sized_pod<WNDCLASSEX>();
   wc.style = 0;
   wc.lpfnWndProc = reinterpret_cast<WNDPROC>(DefDlgProc);
   wc.cbClsExtra = 0;
@@ -596,11 +649,12 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
   hAppIcon = LoadIcon(nullptr, IDI_WINLOGO);
 
   HWND hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
-  for (MSG msg; GetMessage(&msg, nullptr, 0, 0); ) {
+  MSG msg;
+  while (GetMessage(&msg, nullptr, 0, 0)) {
     if (IsDialogMessage(hWnd, &msg))
       continue;
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
-  return 0;
+  return msg.wParam;
 }

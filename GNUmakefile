@@ -2,10 +2,11 @@ OUTDIR ?= out
 CXX ?= g++
 CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 -I. -I$(OUTDIR)
 WINDRES ?= LANG=C windres
-LIBS ?= -lshell32 -luser32 -lgdi32
+LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
 SUBSYSTEM ?= windows
+PROCESSOR_ARCHITECTURE ?= AMD64
 
 MSYSTEM ?= MINGW64
 export MSYSTEM
@@ -19,9 +20,12 @@ RES = $(RC_SRCS:%.rc=$(OUTDIR)/%.res)
 MANIFEST_SRCS = umapita.manifest.tmpl
 MANIFEST = $(MANIFEST_SRCS:%.manifest.tmpl=$(OUTDIR)/%.manifest)
 
-.PHONY: all clean
+.PHONY: all clean debug
 
 all: $(OUTDIR)/umapita.exe
+
+debug:
+	@$(MAKE) EXECUTION_LEVEL=asInvoker SUBSYSTEM=console OUTDIR=out.debug all
 
 _dep: $(DEPS)
 
@@ -46,4 +50,7 @@ $(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) | $(OUTDIR)
 	$(WINDRES) -I$(OUTDIR) --output-format=coff -o $@ $<
 
 $(MANIFEST): $(MANIFEST_SRCS)
-	sed 's/@@@EXECUTION_LEVEL@@@/$(EXECUTION_LEVEL)/;s/@@@UI_ACCESS@@@/$(UI_ACCESS)/' $< > $@
+	sed	-e 's/@@@EXECUTION_LEVEL@@@/$(EXECUTION_LEVEL)/g' \
+		-e 's/@@@UI_ACCESS@@@/$(UI_ACCESS)/g' \
+		-e 's/@@@PROCESSOR_ARCHITECTURE@@@/$(PROCESSOR_ARCHITECTURE)/g' \
+		$< > $@
