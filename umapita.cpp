@@ -21,13 +21,17 @@ UINT msgTaskbarCreated = 0;
 HICON hAppIcon = nullptr;
 Monitors monitors;
 bool isEnabled = true;
-bool isChanged = false;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 
 struct TargetStatus {
   HWND hWnd = nullptr;
-  RECT windowRect{0, 0, 0, 0}, clientRect{0, 0, 0, 0};
+  RECT windowRect{0, 0, 0, 0};
+  RECT clientRect{0, 0, 0, 0};
 };
+inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
+  using namespace AM::Win32::Op;
+  return lhs.hWnd && lhs.hWnd == rhs.hWnd && lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect;
+}
 
 template <typename Enum>
 struct CheckButtonMap {
@@ -50,6 +54,8 @@ struct PerOrientationSetting {
   enum Axis { Width, Height } axis = Height;
   enum Origin { N, S, W, E, NW, NE, SW, SE, C } origin = N;
   LONG offsetX = 0, offsetY = 0;
+  LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
+  PerOrientationSetting(LONG aX, LONG aY) : aspectX{aX}, aspectY{aY} { }
 };
 
 struct PerOrientationSettingID {
@@ -61,7 +67,8 @@ struct PerOrientationSettingID {
   int offsetX, offsetY;
 };
 
-PerOrientationSetting verticalSetting, horizontalSetting;
+PerOrientationSetting verticalSetting{9, 16}, horizontalSetting{16, 9};
+
 constexpr PerOrientationSettingID verticalSettingID = {
   // monitorNumber
   IDC_V_MONITOR_NUMBER,
@@ -246,77 +253,86 @@ static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
   TrackPopupMenuEx(hMenu, TPM_LEFTALIGN|TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
 }
 
-static TargetStatus update_target_information(HWND hWndDialog) {
-  TargetStatus ret;
-  HWND hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME);
-  TCHAR tmp[256];
+static const Monitor *get_current_monitor(int monitorNumber) {
+  auto mn = monitorNumber + 1;
 
-  _tcscpy(tmp, TEXT("<target not found>"));
-  if (hWndTarget) {
-    auto wi = Win32::make_sized_pod<WINDOWINFO>();
-    if (GetWindowInfo(hWndTarget, &wi)) {
-      TCHAR tmp2[100];
-      LONG w = wi.rcClient.right - wi.rcClient.left;
-      LONG h = wi.rcClient.bottom - wi.rcClient.top;
-      LoadString(hInstance, w > h ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
-      _stprintf(tmp,
-                TEXT("id=0x%08X (%ld,%ld)-(%ld,%ld) / (%ld,%ld)-(%ld,%ld) (%ls)"),
-                static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(hWndTarget)),
-                wi.rcWindow.left, wi.rcWindow.top, wi.rcWindow.right, wi.rcWindow.bottom,
-                wi.rcClient.left, wi.rcClient.top, wi.rcClient.right, wi.rcClient.bottom,
-                tmp2);
-      ret.hWnd = hWndTarget;
-      ret.windowRect = wi.rcWindow;
-      ret.clientRect = wi.rcClient;
-    }
-  }
-  SetWindowText(GetDlgItem(hWndDialog, IDC_TARGET_STATUS), tmp);
-  return ret;
+  if (mn < 0 || static_cast<size_t>(mn) >= monitors.size())
+    return NULL;
+
+  return &monitors[mn];
 }
 
-inline auto width(const RECT &r) -> auto { return r.right - r.left; }
-inline auto height(const RECT &r) -> auto { return r.bottom - r.top; }
+static TargetStatus get_target_information() {
+  if (auto hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
+    auto wi = Win32::make_sized_pod<WINDOWINFO>();
+    if (GetWindowInfo(hWndTarget, &wi))
+      return {hWndTarget, wi.rcWindow, wi.rcClient};
+  }
+  return {};
+}
 
-static void update_target(HWND hWnd) {
-  TargetStatus ts = update_target_information(hWnd);
+struct AdjustTargetResult {
+  bool isChanged;
+  TargetStatus targetStatus;
+};
+
+static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) {
+  static TargetStatus lastTargetStatus;
+
+  // ターゲット情報の更新
+  TargetStatus ts = get_target_information();
+
+  // ターゲットも設定も変更されていない場合は終了
+  if (!isSettingChanged && ts == lastTargetStatus)
+    return {false, {}};
+
+  lastTargetStatus = ts;
 
   if (isEnabled && ts.hWnd && IsWindowVisible(ts.hWnd)) {
-    auto cW = width(ts.clientRect);
-    auto cH = height(ts.clientRect);
-    auto wW = width(ts.windowRect);
-    auto wH = height(ts.windowRect);
+    // ターゲットのジオメトリを更新する
+    auto cW = Win32::width(ts.clientRect);
+    auto cH = Win32::height(ts.clientRect);
+    auto wW = Win32::width(ts.windowRect);
+    auto wH = Win32::height(ts.windowRect);
+    // ncX, ncY : クライアント領域の左上端を原点とした非クライアント領域の左上端（一般に負）
+    // ncW, ncH : クライアント領域の占める幅と高さ（両サイドの和）
     auto ncX = ts.windowRect.left - ts.clientRect.left;
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
     const PerOrientationSetting &s = cW > cH ? horizontalSetting:verticalSetting;
-    auto mn = s.monitorNumber + 1;
 
-    if (static_cast<size_t>(mn) >= monitors.size())
-      return;
+    auto pMonitor = get_current_monitor(s.monitorNumber);
+    if (!pMonitor)
+      return {true, lastTargetStatus};
 
-    auto const &mR = std::get<RECT>(monitors[mn]);
-    auto mW = width(mR);
-    auto mH = height(mR);
+    auto mR = std::get<RECT>(*pMonitor);
+    auto [mW, mH] = Win32::extent(mR);
 
+    // idealCW, idealCH : 理想のクライアント領域サイズ
+    // 縦横比は s.windowArea の設定に関係なくクライアント領域の縦横比で固定されるため、
+    // ひとまず s.size をクライアント領域のサイズに換算してクライアント領域の W, H を求める
     LONG idealCW = 0, idealCH = 0;
     switch (s.axis) {
     case PerOrientationSetting::Width: {
       auto sz = s.size == 0 ? mW : s.size;
       idealCW = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncW;
-      idealCH = cH * idealCW / cW;
+      idealCH = s.aspectY * idealCW / s.aspectX;
       break;
     }
     case PerOrientationSetting::Height: {
       auto sz = s.size == 0 ? mH : s.size;
       idealCH = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncH;
-      idealCW = cW * idealCH / cH;
+      idealCW = s.aspectX * idealCH / s.aspectY;
       break;
     }
     }
+
+    // 原点に対してウィンドウを配置する
+    // idealX, idealY, idealW, idealH : s.windowArea の設定により、ウィンドウ領域またはクライアント領域の座標値
+    LONG idealX = 0, idealY = 0;
     auto idealW = s.windowArea == PerOrientationSetting::Client ? idealCW : idealCW + ncW;
     auto idealH = s.windowArea == PerOrientationSetting::Client ? idealCH : idealCH + ncH;
-    LONG idealX = 0, idealY = 0;
     switch (s.origin) {
     case PerOrientationSetting::NW:
     case PerOrientationSetting::W:
@@ -351,22 +367,29 @@ static void update_target(HWND hWnd) {
       idealY = mR.bottom - idealH - s.offsetY;
       break;
     }
+
+    // idealX, idealY, idealW, idealH をウィンドウ全体領域に換算する
     if (s.windowArea == PerOrientationSetting::Client) {
       idealX += ncX;
       idealY += ncY;
       idealW += ncW;
       idealH += ncH;
     }
-    if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top ||
-         idealW != wW || idealH != wH) &&
+    // idealCX, idealCY : クライアント領域の左上の座標値を計算する
+    auto idealCX = idealX - ncX;
+    auto idealCY = idealY - ncY;
+    printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
+    if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top || idealW != wW || idealH != wH) &&
         idealW > MIN_WIDTH && idealH > MIN_HEIGHT) {
       if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH,
                         SWP_NOACTIVATE | SWP_NOZORDER)) {
         printf("failed: %lu\n", GetLastError());
       }
-      printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
+      lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
+      lastTargetStatus.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
     }
   }
+  return {true, lastTargetStatus};
 }
 
 template <typename Enum, std::size_t Num>
@@ -444,13 +467,34 @@ static void init_main_controlls(HWND hWnd) {
   init_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
 }
 
-static void update_dialog_items(HWND hWnd) {
+static void on_update_dialog_items(HWND hWnd) {
   isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
   get_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
   get_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
 }
 
+static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
+  TCHAR tmp[256];
+  _tcscpy(tmp, TEXT("<target not found>"));
+  if (ts.hWnd) {
+    auto cW = Win32::width(ts.clientRect);
+    auto cH = Win32::height(ts.clientRect);
+    auto wW = Win32::width(ts.windowRect);
+    auto wH = Win32::height(ts.windowRect);
+    TCHAR tmp2[100];
+    LoadString(hInstance, cW > cH ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
+    _stprintf(tmp,
+              TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
+              static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
+              ts.windowRect.left, ts.windowRect.top, wW, wH,
+              ts.clientRect.left, ts.clientRect.top, cW, cH,
+              tmp2);
+  }
+  SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
+}
+
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  static bool isDialogChanged = false;
   switch (msg) {
   case WM_INITDIALOG: {
     // add "quit" to system menu, individual to "close".
@@ -505,7 +549,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   case WM_COMMAND: {
     UINT id = LOWORD(wParam);
     if (id >= IDC_BEGIN && id <= IDC_END)
-      isChanged = true;
+      isDialogChanged = true;
     switch (id) {
     case IDC_HIDE:
       ShowWindow(hWnd, SW_HIDE);
@@ -532,12 +576,12 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
     }
     if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
-      isChanged = true;
+      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
       return TRUE;
     }
     if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + monitors.size()) {
-      isChanged = true;
+      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
       return TRUE;
     }
@@ -549,11 +593,11 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return TRUE;
 
   case WM_TIMER:
-    if (isChanged) {
-      update_dialog_items(hWnd);
-      isChanged = false;
-    }
-    update_target(hWnd);
+    if (isDialogChanged)
+      on_update_dialog_items(hWnd);
+    if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged)
+      update_target_status_text(hWnd, r.targetStatus);
+    isDialogChanged = false;
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
 
