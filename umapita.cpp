@@ -20,7 +20,6 @@ HINSTANCE hInstance;
 UINT msgTaskbarCreated = 0;
 HICON hAppIcon = nullptr;
 Monitors monitors;
-bool isEnabled = true;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 
 struct TargetStatus {
@@ -66,8 +65,6 @@ struct PerOrientationSettingID {
   RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
 };
-
-PerOrientationSetting verticalSetting{9, 16}, horizontalSetting{16, 9};
 
 constexpr PerOrientationSettingID verticalSettingID = {
   // monitorNumber
@@ -121,6 +118,13 @@ constexpr PerOrientationSettingID horizontalSettingID = {
   // offsetY
   IDC_H_OFFSET_Y,
 };
+
+struct Setting {
+  bool isEnabled = true;
+  PerOrientationSetting verticalSetting{9, 16}, horizontalSetting{16, 9};
+};
+
+Setting s_currentSetting;
 
 inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
   auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
@@ -278,6 +282,7 @@ struct AdjustTargetResult {
 
 static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) {
   static TargetStatus lastTargetStatus;
+  auto const &setting = s_currentSetting;
 
   // ターゲット情報の更新
   TargetStatus ts = get_target_information();
@@ -288,7 +293,7 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
 
   lastTargetStatus = ts;
 
-  if (isEnabled && ts.hWnd && IsWindowVisible(ts.hWnd)) {
+  if (setting.isEnabled && ts.hWnd && IsWindowVisible(ts.hWnd)) {
     // ターゲットのジオメトリを更新する
     auto cW = Win32::width(ts.clientRect);
     auto cH = Win32::height(ts.clientRect);
@@ -300,7 +305,7 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerOrientationSetting &s = cW > cH ? horizontalSetting:verticalSetting;
+    const PerOrientationSetting &s = cW > cH ? setting.horizontalSetting : setting.verticalSetting;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
     if (!pMonitor)
@@ -461,15 +466,17 @@ static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingI
 }
 
 static void init_main_controlls(HWND hWnd) {
-  set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), isEnabled);
-  init_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
-  init_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
+  auto const &setting = s_currentSetting;
+  set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
+  init_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
+  init_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
 }
 
 static void on_update_dialog_items(HWND hWnd) {
-  isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_orientation_settings(hWnd, verticalSettingID, verticalSetting);
-  get_per_orientation_settings(hWnd, horizontalSettingID, horizontalSetting);
+  auto &setting = s_currentSetting;
+  setting.isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
+  get_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
+  get_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
 }
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
