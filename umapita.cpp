@@ -5,7 +5,6 @@
 namespace Win32 = AM::Win32;
 
 constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
-constexpr UINT WM_SET_MONITORS = WM_USER+0x1001;
 constexpr UINT TASKTRAY_ID = 1;
 constexpr UINT TIMER_ID = 1;
 constexpr UINT TIMER_PERIOD = 200;
