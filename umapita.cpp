@@ -132,7 +132,7 @@ inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
 static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
   auto nid = make_notify_icon_data(hWnd, TASKTRAY_ID);
 
-  nid.uFlags = NIF_ICON|NIF_MESSAGE|NIF_TIP;
+  nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
   LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
@@ -167,7 +167,7 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
     hMenu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
     hTasktrayMenu = GetSubMenu(hMenu, 0);
     TrackPopupMenuEx(hTasktrayMenu,
-                     TPM_LEFTALIGN|TPM_LEFTBUTTON, point.x, point.y,
+                     TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y,
                      hWnd, pTpmp);
     DestroyMenu(hMenu);
 }
@@ -250,7 +250,7 @@ static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
   RECT rect{0, 0, 0, 0};
   GetWindowRect(GetDlgItem(hWnd, id), &rect);
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN|TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
+  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
 }
 
 static const Monitor *get_current_monitor(int monitorNumber) {
@@ -381,8 +381,7 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
     if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top || idealW != wW || idealH != wH) &&
         idealW > MIN_WIDTH && idealH > MIN_HEIGHT) {
-      if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH,
-                        SWP_NOACTIVATE | SWP_NOZORDER)) {
+      if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH, SWP_NOACTIVATE | SWP_NOZORDER)) {
         printf("failed: %lu\n", GetLastError());
       }
       lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
@@ -502,7 +501,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     TCHAR tmp[128];
     LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED|MF_STRING, IDC_QUIT, tmp);
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, tmp);
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
