@@ -474,6 +474,7 @@ static void on_update_dialog_items(HWND hWnd) {
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
   TCHAR tmp[256];
+  bool isHorizontal = false, isVertical = false;
   _tcscpy(tmp, TEXT("<target not found>"));
   if (ts.hWnd) {
     auto cW = Win32::width(ts.clientRect);
@@ -481,7 +482,9 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
     auto wW = Win32::width(ts.windowRect);
     auto wH = Win32::height(ts.windowRect);
     TCHAR tmp2[100];
-    LoadString(hInstance, cW > cH ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
+    isHorizontal = cW > cH;
+    isVertical = !isHorizontal;
+    LoadString(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
     _stprintf(tmp,
               TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
@@ -490,6 +493,10 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
               tmp2);
   }
   SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
+  LoadString(hInstance, isVertical ? IDS_FOCUSED_ORIGIN_VERTICAL:IDS_ORIGIN_VERTICAL, tmp, std::size(tmp));
+  SetWindowText(GetDlgItem(hWnd, IDC_V_GROUPBOX), tmp);
+  LoadString(hInstance, isHorizontal ? IDS_FOCUSED_ORIGIN_HORIZONTAL:IDS_ORIGIN_HORIZONTAL, tmp, std::size(tmp));
+  SetWindowText(GetDlgItem(hWnd, IDC_H_GROUPBOX), tmp);
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
