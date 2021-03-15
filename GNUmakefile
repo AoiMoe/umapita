@@ -6,6 +6,7 @@ LIBS ?= -lshell32 -luser32 -lgdi32
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
 SUBSYSTEM ?= windows
+PROCESSOR_ARCHITECTURE ?= AMD64
 
 MSYSTEM ?= MINGW64
 export MSYSTEM
@@ -49,4 +50,7 @@ $(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) | $(OUTDIR)
 	$(WINDRES) -I$(OUTDIR) --output-format=coff -o $@ $<
 
 $(MANIFEST): $(MANIFEST_SRCS)
-	sed 's/@@@EXECUTION_LEVEL@@@/$(EXECUTION_LEVEL)/;s/@@@UI_ACCESS@@@/$(UI_ACCESS)/' $< > $@
+	sed	-e 's/@@@EXECUTION_LEVEL@@@/$(EXECUTION_LEVEL)/g' \
+		-e 's/@@@UI_ACCESS@@@/$(UI_ACCESS)/g' \
+		-e 's/@@@PROCESSOR_ARCHITECTURE@@@/$(PROCESSOR_ARCHITECTURE)/g' \
+		$< > $@
