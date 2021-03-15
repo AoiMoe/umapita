@@ -2,7 +2,7 @@ OUTDIR ?= out
 CXX ?= g++
 CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 -I. -I$(OUTDIR)
 WINDRES ?= LANG=C windres
-LIBS ?= -lshell32 -luser32 -lgdi32
+LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
 SUBSYSTEM ?= windows
