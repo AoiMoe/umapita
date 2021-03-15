@@ -4,15 +4,15 @@
 
 namespace Win32 = AM::Win32;
 
-#define WM_TASKTRAY (WM_USER+0x1000)
-#define WM_SET_MONITORS (WM_USER+0x1001)
-#define TASKTRAY_ID 1
-#define TIMER_ID 1
-#define TIMER_PERIOD 500
-#define TARGET_WINDOW_CLASS TEXT("UnityWndClass")
-#define TARGET_WINDOW_NAME TEXT("umamusume")
-#define MIN_WIDTH 100
-#define MIN_HEIGHT 100
+constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
+constexpr UINT WM_SET_MONITORS = WM_USER+0x1001;
+constexpr UINT TASKTRAY_ID = 1;
+constexpr UINT TIMER_ID = 1;
+constexpr UINT TIMER_PERIOD = 500;
+constexpr const LPCTSTR TARGET_WINDOW_CLASS = TEXT("UnityWndClass");
+constexpr const LPCTSTR TARGET_WINDOW_NAME = TEXT("umamusume");
+constexpr int MIN_WIDTH = 100;
+constexpr int MIN_HEIGHT = 100;
 
 using Monitor = std::tuple<RECT, std::wstring, BOOL>;
 using Monitors = std::vector<Monitor>;
