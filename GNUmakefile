@@ -12,7 +12,8 @@ PROCESSOR_ARCHITECTURE ?= AMD64
 MSYSTEM ?= MINGW64
 export MSYSTEM
 
-SRCS = $(wildcard *.cpp)
+AMOUTDIR = $(OUTDIR)/am
+SRCS = $(wildcard am/*.cpp) $(wildcard *.cpp)
 OBJS = $(SRCS:%.cpp=$(OUTDIR)/%.o)
 DEPS = $(OBJS:$(OUTDIR)/%.o=$(OUTDIR)/%.d)
 RC_SRCS = umapita_res.rc
@@ -45,19 +46,25 @@ _dep: $(DEPS)
 -include $(DEPS)
 
 $(EXE): $(OBJS) $(RES) | _dep
-	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $< $(RES) $(LIBS)
+	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(LIBS)
 
-$(OUTDIR)/pch.h.gch: pch.h | $(OUTDIR)
+$(OUTDIR)/pch.h.gch: pch.h am/pch.h | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-$(OUTDIR)/%.o: %.cpp $(OUTDIR)/pch.h.gch | $(OUTDIR)
+$(AMOUTDIR)/pch.h.gch: am/pch.h | $(AMOUTDIR)
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+$(OUTDIR)/%.o: %.cpp $(OUTDIR)/pch.h.gch | $(OUTDIR) $(AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(OUTDIR)/%.d: %.cpp | $(OUTDIR)
+$(OUTDIR)/%.d: %.cpp | $(OUTDIR) $(AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.o} $<
 
 $(OUTDIR):
-	test -e $(OUTDIR) || mkdir $(OUTDIR)
+	@test -e $(OUTDIR) || mkdir $(OUTDIR)
+
+$(AMOUTDIR): $(OUTDIR)
+	@test -e $(AMOUTDIR) || mkdir $(AMOUTDIR)
 
 $(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) | $(OUTDIR)
 	$(WINDRES) -I$(OUTDIR) --output-format=coff -o $@ $<
