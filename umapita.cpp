@@ -1,17 +1,24 @@
 #include "pch.h"
 #include "am/win32util.h"
+#include "am/win32reg.h"
 #include "umapita_res.h"
 
 namespace Win32 = AM::Win32;
+using AM::Log;
 
 constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
 constexpr UINT TASKTRAY_ID = 1;
 constexpr UINT TIMER_ID = 1;
 constexpr UINT TIMER_PERIOD = 200;
-constexpr const LPCTSTR TARGET_WINDOW_CLASS = TEXT("UnityWndClass");
-constexpr const LPCTSTR TARGET_WINDOW_NAME = TEXT("umamusume");
+constexpr TCHAR TARGET_WINDOW_CLASS[] = TEXT("UnityWndClass");
+constexpr TCHAR TARGET_WINDOW_NAME[] = TEXT("umamusume");
 constexpr int MIN_WIDTH = 100;
 constexpr int MIN_HEIGHT = 100;
+
+// reinterpret_cast は constexpr ではないので constexpr auto REG_ROOT_KEY = HKEY_CURRENT_USER; だと通らない
+#define REG_ROOT_KEY HKEY_CURRENT_USER
+constexpr TCHAR REG_PROJECT_ROOT_PATH[] = TEXT("Software\\AoiMoe\\umapita");
+constexpr auto MAX_PROFILE_NAME = 100;
 
 using Monitor = std::tuple<RECT, std::wstring, BOOL>;
 using Monitors = std::vector<Monitor>;
@@ -22,6 +29,9 @@ HICON hAppIcon = nullptr;
 Monitors monitors;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 
+//
+// 監視対象ウィンドウの状態
+//
 struct TargetStatus {
   HWND hWnd = nullptr;
   RECT windowRect{0, 0, 0, 0};
@@ -32,6 +42,31 @@ inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
   return lhs.hWnd && lhs.hWnd == rhs.hWnd && lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect;
 }
 
+
+//
+// 設定値
+//
+struct PerOrientationSetting {
+  LONG monitorNumber = 0;
+  enum WindowArea { Whole, Client } windowArea = Client;
+  LONG size = 0;
+  enum SizeAxis { Width, Height } axis = Height;
+  enum Origin { N, S, W, E, NW, NE, SW, SE, C } origin = N;
+  LONG offsetX = 0, offsetY = 0;
+  LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
+};
+
+struct Setting {
+  bool isEnabled = true;
+  PerOrientationSetting verticalSetting{.aspectX=9, .aspectY=16};
+  PerOrientationSetting horizontalSetting{.aspectX=16, .aspectY=9};
+};
+
+Setting s_currentSetting;
+
+//
+// ダイアログボックス上のコントロールと設定のマッピング
+//
 template <typename Enum>
 struct CheckButtonMap {
   Enum unchecked;
@@ -46,22 +81,11 @@ constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
 template <typename Enum, std::size_t Num>
 using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
 
-struct PerOrientationSetting {
-  int monitorNumber = 0;
-  enum WindowArea { Whole, Client } windowArea = Client;
-  LONG size = 0;
-  enum Axis { Width, Height } axis = Height;
-  enum Origin { N, S, W, E, NW, NE, SW, SE, C } origin = N;
-  LONG offsetX = 0, offsetY = 0;
-  LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
-  PerOrientationSetting(LONG aX, LONG aY) : aspectX{aX}, aspectY{aY} { }
-};
-
 struct PerOrientationSettingID {
   int monitorNumber;
   RadioButtonMap<PerOrientationSetting::WindowArea, 2> windowArea;
   int size;
-  RadioButtonMap<PerOrientationSetting::Axis, 2> axis;
+  RadioButtonMap<PerOrientationSetting::SizeAxis, 2> axis;
   RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
 };
@@ -119,12 +143,225 @@ constexpr PerOrientationSettingID horizontalSettingID = {
   IDC_H_OFFSET_Y,
 };
 
-struct Setting {
-  bool isEnabled = true;
-  PerOrientationSetting verticalSetting{9, 16}, horizontalSetting{16, 9};
+
+//
+// レジストリ
+//
+
+template <typename Map>
+using RegMap = std::pair<LPCTSTR, Map>;
+
+template <typename Enum, std::size_t Num>
+using RegEnumMap = std::array<std::pair<LPCTSTR, Enum>, Num>;
+
+struct RegBoolMap { };
+struct RegLongMap { };
+
+struct PerOrientationSettingRegMap {
+  using WindowAreaMap = RegEnumMap<PerOrientationSetting::WindowArea, 2>;
+  constexpr static WindowAreaMap WindowArea = {{
+      {TEXT("Whole"), PerOrientationSetting::Whole},
+      {TEXT("Client"), PerOrientationSetting::Client},
+    }};
+  using SizeAxisMap = RegEnumMap<PerOrientationSetting::SizeAxis, 2>;
+  constexpr static SizeAxisMap SizeAxis = {{
+      {TEXT("Width"), PerOrientationSetting::Width},
+      {TEXT("Height"), PerOrientationSetting::Height},
+    }};
+  using OriginMap = RegEnumMap<PerOrientationSetting::Origin, 9>;
+  constexpr static OriginMap Origin = {{
+      {TEXT("N"), PerOrientationSetting::N},
+      {TEXT("S"), PerOrientationSetting::S},
+      {TEXT("W"), PerOrientationSetting::W},
+      {TEXT("E"), PerOrientationSetting::E},
+      {TEXT("NW"), PerOrientationSetting::NW},
+      {TEXT("NE"), PerOrientationSetting::NE},
+      {TEXT("SW"), PerOrientationSetting::SW},
+      {TEXT("SE"), PerOrientationSetting::SE},
+    }};
+  RegMap<RegLongMap> monitorNumber;
+  RegMap<WindowAreaMap> windowArea;
+  RegMap<RegLongMap> size;
+  RegMap<SizeAxisMap> axis;
+  RegMap<OriginMap> origin;
+  RegMap<RegLongMap> offsetX;
+  RegMap<RegLongMap> offsetY;
+  RegMap<RegLongMap> aspectX;
+  RegMap<RegLongMap> aspectY;
 };
 
-Setting s_currentSetting;
+constexpr PerOrientationSettingRegMap verticalSettingRegMap = {
+  {TEXT("vMonitorNumber"), {}},
+  {TEXT("vWindowArea"), PerOrientationSettingRegMap::WindowArea},
+  {TEXT("vSize"), {}},
+  {TEXT("vSizeAxis"), PerOrientationSettingRegMap::SizeAxis},
+  {TEXT("vOrigin"), PerOrientationSettingRegMap::Origin},
+  {TEXT("vOffsetX"), {}},
+  {TEXT("vOffsetY"), {}},
+  {TEXT("vAspectX"), {}},
+  {TEXT("vAspectY"), {}},
+};
+
+constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
+  {TEXT("hMonitorNumber"), {}},
+  {TEXT("hWindowArea"), PerOrientationSettingRegMap::WindowArea},
+  {TEXT("hSize"), {}},
+  {TEXT("hSizeAxis"), PerOrientationSettingRegMap::SizeAxis},
+  {TEXT("hOrigin"), PerOrientationSettingRegMap::Origin},
+  {TEXT("hOffsetX"), {}},
+  {TEXT("hOffsetY"), {}},
+  {TEXT("hAspectX"), {}},
+  {TEXT("hAspectY"), {}},
+};
+
+struct RegGetFailed : AM::RuntimeError<RegGetFailed> { };
+
+inline bool reg_get_(const Win32::Reg::Key &key, const RegMap<RegBoolMap> &m) {
+  bool v = !!Win32::Reg::query_dword(key, m.first);
+  Log::debug(TEXT("reg_get: %S -> %hs"), m.first, v ? "true":"false");
+  return v;
+}
+
+inline LONG reg_get_(const Win32::Reg::Key &key, const RegMap<RegLongMap> &m) {
+  LONG v = static_cast<INT32>(Win32::Reg::query_dword(key, m.first));
+  Log::debug(TEXT("reg_get: %S -> %ld"), m.first, v);
+  return v;
+}
+
+template <class Enum, std::size_t Num>
+Enum reg_get_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, Num>> &m) {
+  auto str = Win32::Reg::query_sz(key, m.first);
+  Log::debug(TEXT("reg_get: %S -> %S"), m.first, str.c_str());
+  for (auto [t, v] : m.second) {
+    if (str == t)
+      return v;
+  }
+  Log::error(TEXT("unknown enum tag in \"%S\": %S"), m.first, str.c_str());
+  throw RegGetFailed{};
+}
+
+template <class T>
+auto reg_get(const Win32::Reg::Key &key, const RegMap<T> &m) {
+  try {
+    return reg_get_(key, m);
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::error(TEXT("cannot get \"%S\" value: %hs(%d)"), m.first, ex.what(), ex.code);
+    throw RegGetFailed{};
+  }
+}
+
+struct RegPutFailed : AM::RuntimeError<RegGetFailed> { };
+
+inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegBoolMap> &m, bool v) {
+  Log::debug(TEXT("reg_put: %S -> %hs"), m.first, v ? "true":"false");
+  Win32::Reg::set_dword(key, m.first, static_cast<DWORD>(v));
+}
+
+inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegLongMap> &m, LONG v) {
+  Log::debug(TEXT("reg_put: %S -> %ld"), m.first, v);
+  Win32::Reg::set_dword(key, m.first, static_cast<DWORD>(v));
+}
+
+template <class Enum, std::size_t Num>
+inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, Num>> &m, Enum v) {
+  LPCTSTR tag = [&m,v]() {
+                  for (auto [t, x] : m.second) {
+                    if (v == x)
+                      return t;
+                  }
+                  throw RegPutFailed{};
+                }();
+  Log::debug(TEXT("reg_put: %S -> %S"), m.first, tag);
+  Win32::Reg::set_sz(key, m.first, tag);
+}
+
+template <class T, class V>
+auto reg_put(const Win32::Reg::Key &key, const RegMap<T> &m, const V &v) {
+  try {
+    return reg_put_(key, m, v);
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::error(TEXT("cannot put \"%S\" value: %hs(%d)"), m.first, ex.what(), ex.code);
+    throw RegPutFailed{};
+  }
+}
+
+inline Win32::tstring make_regpath(LPCTSTR profileName) {
+  Win32::tstring tmp{REG_PROJECT_ROOT_PATH};
+
+  if (profileName) {
+    tmp += TEXT("\\");
+    tmp += profileName;
+  }
+  return tmp;
+}
+
+inline PerOrientationSetting reg_get_per_orientation_setting(const Win32::Reg::Key &key, PerOrientationSettingRegMap m) {
+  return PerOrientationSetting{
+    reg_get(key, m.monitorNumber),
+    reg_get(key, m.windowArea),
+    reg_get(key, m.size),
+    reg_get(key, m.axis),
+    reg_get(key, m.origin),
+    reg_get(key, m.offsetX),
+    reg_get(key, m.offsetY),
+    reg_get(key, m.aspectX),
+    reg_get(key, m.aspectY),
+  };
+}
+
+inline void reg_put_per_orientation_setting(const Win32::Reg::Key &key, PerOrientationSettingRegMap m, const PerOrientationSetting s) {
+  reg_put(key, m.monitorNumber, s.monitorNumber);
+  reg_put(key, m.windowArea, s.windowArea);
+  reg_put(key, m.size, s.size);
+  reg_put(key, m.axis, s.axis);
+  reg_put(key, m.origin, s.origin);
+  reg_put(key, m.offsetX, s.offsetX);
+  reg_put(key, m.offsetY, s.offsetY);
+  reg_put(key, m.aspectX, s.aspectX);
+  reg_put(key, m.aspectY, s.aspectY);
+}
+
+static Setting load_setting(LPCTSTR profileName) {
+  auto path = make_regpath(profileName);
+
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    try {
+      return Setting{
+        reg_get(key, RegMap<RegBoolMap>{TEXT("isEnabled"), RegBoolMap{}}),
+        reg_get_per_orientation_setting(key, verticalSettingRegMap),
+        reg_get_per_orientation_setting(key, horizontalSettingRegMap),
+      };
+    }
+    catch (RegGetFailed &) {
+      return Setting{};
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+    return Setting{};
+  }
+}
+
+static void save_setting(LPCTSTR profileName, const Setting &s) {
+  auto path = make_regpath(profileName);
+
+  try {
+    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    try {
+      reg_put(key, RegMap<RegBoolMap>{TEXT("isEnabled"), RegBoolMap{}}, s.isEnabled);
+      reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
+      reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
+    }
+    catch (RegPutFailed &) {
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+}
 
 inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
   auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
@@ -519,6 +756,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
+    s_currentSetting = load_setting(nullptr);
     init_main_controlls(hWnd);
     add_tasktray_icon(hWnd, hAppIcon);
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
@@ -569,6 +807,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
       return TRUE;
 
     case IDC_QUIT:
+      save_setting(nullptr, s_currentSetting);
       delete_tasktray_icon(hWnd);
       KillTimer(hWnd, TIMER_ID);
       DestroyWindow(hWnd);
