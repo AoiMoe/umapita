@@ -3,6 +3,7 @@ CXX ?= g++
 CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 -I. -I$(OUTDIR)
 WINDRES ?= LANG=C windres
 LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
+
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
 SUBSYSTEM ?= windows
@@ -19,19 +20,31 @@ RC_DEPENDS = umapita_res.h
 RES = $(RC_SRCS:%.rc=$(OUTDIR)/%.res)
 MANIFEST_SRCS = umapita.manifest.tmpl
 MANIFEST = $(MANIFEST_SRCS:%.manifest.tmpl=$(OUTDIR)/%.manifest)
+EXE = $(OUTDIR)/umapita.exe
 
-.PHONY: all clean debug
+.PHONY: all clean debug release
 
-all: $(OUTDIR)/umapita.exe
+all: $(EXE)
 
 debug:
-	@$(MAKE) EXECUTION_LEVEL=asInvoker SUBSYSTEM=console OUTDIR=out.debug all
+	@$(MAKE) --no-print-directory EXECUTION_LEVEL=asInvoker UI_ACCESS=false SUBSYSTEM=console OUTDIR=out.debug all
+
+release:
+	@$(MAKE) --no-print-directory _release OUTDIR=out.release
+
+_RELEASE_ZIP = umapita-$(VER).zip
+_release:
+	@test x$(VER) != x"" || (echo error: VER not defined. >&2; exit 1)
+	rm -rf $(OUTDIR)
+	@$(MAKE) --no-print-directory OUTDIR=$(OUTDIR) all
+	rm -f $(_RELEASE_ZIP)
+	zip -j $(_RELEASE_ZIP) README.md $(EXE)
 
 _dep: $(DEPS)
 
 -include $(DEPS)
 
-$(OUTDIR)/umapita.exe: $(OBJS) $(RES) | _dep
+$(EXE): $(OBJS) $(RES) | _dep
 	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $< $(RES) $(LIBS)
 
 $(OUTDIR)/pch.h.gch: pch.h | $(OUTDIR)
