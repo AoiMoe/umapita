@@ -39,7 +39,7 @@ struct TargetStatus {
 };
 inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
   using namespace AM::Win32::Op;
-  return lhs.hWnd && lhs.hWnd == rhs.hWnd && lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect;
+  return lhs.hWnd == rhs.hWnd && (!lhs.hWnd || (lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect));
 }
 
 
