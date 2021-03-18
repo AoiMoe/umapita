@@ -620,14 +620,24 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     // idealCX, idealCY : クライアント領域の左上の座標値を計算する
     auto idealCX = idealX - ncX;
     auto idealCY = idealY - ncY;
-    printf("%p, x=%ld, y=%ld, w=%ld, h=%ld\n", ts.hWnd, idealX, idealY, idealW, idealH);
+    Log::debug(TEXT("%p, x=%ld, y=%ld, w=%ld, h=%ld"), ts.hWnd, idealX, idealY, idealW, idealH);
     if ((idealX != ts.windowRect.left || idealY != ts.windowRect.top || idealW != wW || idealH != wH) &&
         idealW > MIN_WIDTH && idealH > MIN_HEIGHT) {
+      auto willingToUpdate = true;
       if (!SetWindowPos(ts.hWnd, nullptr, idealX, idealY, idealW, idealH, SWP_NOACTIVATE | SWP_NOZORDER)) {
-        printf("failed: %lu\n", GetLastError());
+        // SetWindowPos に失敗
+        auto err = GetLastError();
+        Log::error(TEXT("SetWindowPos failed: %lu\n"), err);
+        if (err == ERROR_ACCESS_DENIED) {
+          // 権限がない場合、どうせ次も失敗するので lastTargetStatus を ts のままにしておく。
+          // これで余計な更新が走らなくなる。
+          willingToUpdate = false;
+        }
       }
-      lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
-      lastTargetStatus.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
+      if (willingToUpdate) {
+        lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
+        lastTargetStatus.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
+      }
     }
   }
   return {true, lastTargetStatus};
