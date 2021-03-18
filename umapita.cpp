@@ -825,7 +825,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
     case IDC_SHOW:
       ShowWindow(hWnd, SW_SHOW);
-      SetActiveWindow(hWnd);
+      SetForegroundWindow(hWnd);
       return TRUE;
 
     case IDC_V_SELECT_MONITORS:
