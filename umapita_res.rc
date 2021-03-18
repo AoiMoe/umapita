@@ -45,9 +45,10 @@ CLASS UMAPITA_MAIN_WINDOW_CLASS
     AUTORADIOBUTTON "幅",          IDC_##vh##_AXIS_WIDTH, x+188,y+12,20,10,WS_TABSTOP|WS_GROUP \
     AUTORADIOBUTTON "高さ",        IDC_##vh##_AXIS_HEIGHT,x+213,y+12,35,10 \
     \
-    LTEXT      "モニター番号",-1,                        x+5,  y+30,55,10 \
-    EDITTEXT                  IDC_##vh##_MONITOR_NUMBER, x+58, y+29,15,11,ES_NUMBER \
-    PUSHBUTTON ">>",          IDC_##vh##_SELECT_MONITORS,x+73, y+30,10,9 \
+    LTEXT      "モニター番号",-1,                                   x+5,  y+30,55,10 \
+    EDITTEXT                         IDC_##vh##_MONITOR_NUMBER,     x+58, y+29,15,11,ES_NUMBER \
+    PUSHBUTTON ">>",                 IDC_##vh##_SELECT_MONITORS,    x+73, y+30,10,9 \
+    AUTOCHECKBOX "タスクバーを除外", IDC_##vh##_IS_CONSIDER_TASKBAR,x+90,y+29,80,10 \
     \
     DEF_ORIGIN(vh, x+13, y+45) \
     \
