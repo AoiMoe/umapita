@@ -17,6 +17,9 @@ void Log::log(Level level, LPCTSTR fmt, ...) noexcept {
   case Level::Info:
     _ftprintf(stderr, TEXT("[info]: "));
     break;
+  case Level::Warning:
+    _ftprintf(stderr, TEXT("[warning]: "));
+    break;
   case Level::Error:
     _ftprintf(stderr, TEXT("[error]: "));
     break;

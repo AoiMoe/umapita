@@ -7,6 +7,7 @@ public:
   enum class Level {
     Debug,
     Info,
+    Warning,
     Error,
     Fatal,
   };
@@ -17,6 +18,10 @@ public:
   template <typename... ArgTypes>
   static void info(LPCTSTR fmt, ArgTypes... args) noexcept {
     log(Level::Info, fmt, args...);
+  }
+  template <typename... ArgTypes>
+  static void warning(LPCTSTR fmt, ArgTypes... args) noexcept {
+    log(Level::Warning, fmt, args...);
   }
   template <typename... ArgTypes>
   static void error(LPCTSTR fmt, ArgTypes... args) noexcept {
