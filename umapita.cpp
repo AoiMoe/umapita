@@ -20,7 +20,14 @@ constexpr int MIN_HEIGHT = 100;
 constexpr TCHAR REG_PROJECT_ROOT_PATH[] = TEXT("Software\\AoiMoe\\umapita");
 constexpr auto MAX_PROFILE_NAME = 100;
 
-using Monitor = std::tuple<RECT, std::wstring, BOOL>;
+struct Monitor {
+  Win32::tstring name;
+  RECT whole;
+  RECT work;
+  bool isPrimary;
+public:
+  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork, bool aIsPrimary) : name{aName}, whole{aWhole}, work{aWork}, isPrimary{aIsPrimary} { }
+};
 using Monitors = std::vector<Monitor>;
 
 HINSTANCE hInstance;
@@ -435,7 +442,7 @@ static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lPar
   Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
   auto mi = Win32::make_sized_pod<MONITORINFOEX>();
   GetMonitorInfo(hMonitor, &mi);
-  ms.emplace_back(mi.rcMonitor, mi.szDevice, !!(mi.dwFlags & MONITORINFOF_PRIMARY));
+  ms.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork, !!(mi.dwFlags & MONITORINFOF_PRIMARY));
   return TRUE;
 }
 
@@ -450,18 +457,16 @@ static void update_monitors() {
   whole.bottom = whole.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
   // 0: primary monitor
   {
-    if (auto result = std::find_if(ret.begin(), ret.end(),
-                                   [](auto const &m) { return std::get<BOOL>(m); });
-        result == ret.end()) {
+    if (auto result = std::find_if(ret.begin(), ret.end(), [](auto const &m) { return m.isPrimary; }); result == ret.end()) {
       // not found
-      ret.emplace(ret.begin(), whole, TEXT("<primary>"), FALSE);
+      ret.emplace(ret.begin(), TEXT("<primary>"), whole, whole, false);  // 0 番の primary は isPrimary = true とはしない。
     } else {
-      ret.emplace(ret.begin(), std::get<RECT>(*result), TEXT("<primary>"), FALSE);
+      ret.emplace(ret.begin(), TEXT("<primary>"), result->whole, result->work, false);
     }
   }
   // -1: whole virtual desktop
   {
-    ret.emplace(ret.begin(), whole, TEXT("<all monitors>"), FALSE);
+    ret.emplace(ret.begin(), TEXT("<all monitors>"), whole, whole, false);
   }
   monitors = std::move(ret);
 }
@@ -471,10 +476,10 @@ static HMENU create_monitors_menu(int idbase) {
   int id = idbase;
   int index = -1;
 
-  for (auto const & [rect, name, isprimary] : monitors) {
+  for ([[maybe_unused]] auto const &[name, whole, work, isPrimary] : monitors) {
     TCHAR tmp[1024];
     _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-              index++, rect.left, rect.top, rect.right, rect.bottom, name.c_str());
+              index++, whole.left, whole.top, whole.right, whole.bottom, name.c_str());
     AppendMenu(hMenu, MF_STRING, id++, tmp);
   }
 
@@ -545,10 +550,12 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     const PerOrientationSetting &s = cW > cH ? setting.horizontalSetting : setting.verticalSetting;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
-    if (!pMonitor)
+    if (!pMonitor) {
+      Log::warning(TEXT("invalid monitor number: %d"), s.monitorNumber);
       return {true, lastTargetStatus};
+    }
 
-    auto mR = std::get<RECT>(*pMonitor);
+    auto const & mR = pMonitor->whole;
     auto [mW, mH] = Win32::extent(mR);
 
     // idealCW, idealCH : 理想のクライアント領域サイズ
