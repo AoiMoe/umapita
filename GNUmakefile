@@ -78,7 +78,7 @@ $(OUTDIR):
 $(AMOUTDIR): $(OUTDIR)
 	@test -e $(AMOUTDIR) || mkdir $(AMOUTDIR)
 
-$(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) | $(OUTDIR)
+$(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) umapita.ico | $(OUTDIR)
 	$(WINDRES) -I$(OUTDIR) $(WINDRES_VERDEF) --output-format=coff -o $@ $<
 
 $(MANIFEST): $(MANIFEST_SRCS)

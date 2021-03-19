@@ -92,6 +92,11 @@ using RuntimeError = Error<Inherited, std::runtime_error>;
 template <class Inherited>
 using LogicError = Error<Inherited, std::logic_error>;
 
+struct IllegalArgument : LogicError<IllegalArgument> {
+  IllegalArgument() : LogicError<IllegalArgument>{} { }
+  IllegalArgument(const char *msg) : LogicError<IllegalArgument>{msg} { }
+};
+
 template <class Exception, typename T>
 T ensure_expected(T c, const char * = nullptr) {
   return c;
