@@ -44,4 +44,28 @@ bool operator != (const T &lhs, const T &rhs) { return !(lhs == rhs); }
 struct SystemErrorTag {};
 using SystemErrorCode = ErrorCode<DWORD, ERROR_SUCCESS, SystemErrorTag>;
 
+//
+// icon
+//
+namespace Bits_ {
+
+struct HIconDeleter {
+  using pointer = HICON;
+  void operator () (pointer p) noexcept {
+    if (p)
+      DestroyIcon(p);
+  }
+};
+
+using Icon = std::unique_ptr<HICON, HIconDeleter>;
+
+} // namespace Bits_
+
+using Icon = Bits_::Icon;
+inline Icon load_icon_image(HINSTANCE hInst, LPCTSTR name, int cx, int cy, UINT fuLoad) {
+  if ((fuLoad & LR_SHARED))
+    throw IllegalArgument("load_icon_image cannot accept LR_SHARED");
+  return Icon(reinterpret_cast<HICON>(LoadImage(hInst, name, IMAGE_ICON, cx, cy, fuLoad)));
+}
+
 } // namespace AM::Win32
