@@ -46,7 +46,7 @@ release:
 
 _RELEASE_ZIP = umapita-$(VER).zip
 _release:
-	@test x$(VER) = x"undefined" || (echo error: VER is undefined. >&2; exit 1)
+	@test x$(VER) != x"undefined" || (echo error: VER is undefined. >&2; exit 1)
 	@test x$(VER) != x"" || (echo error: VER not defined. >&2; exit 1)
 	rm -rf $(OUTDIR)
 	@$(MAKE) --no-print-directory OUTDIR=$(OUTDIR) all
