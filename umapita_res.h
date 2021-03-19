@@ -1,3 +1,5 @@
+#pragma once
+
 #define IDD_UMAPITA_MAIN 0x100
 
 #define IDM_POPUP 0x200
@@ -61,5 +63,7 @@
 #define IDS_ORIGIN_HORIZONTAL 0x405
 #define IDS_FOCUSED_ORIGIN_VERTICAL 0x406
 #define IDS_FOCUSED_ORIGIN_HORIZONTAL 0x407
+
+#define IDI_UMAPITA 0x500
 
 #define UMAPITA_MAIN_WINDOW_CLASS "umapita main"

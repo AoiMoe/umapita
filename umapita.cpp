@@ -32,7 +32,7 @@ using Monitors = std::vector<Monitor>;
 
 HINSTANCE hInstance;
 UINT msgTaskbarCreated = 0;
-HICON hAppIcon = nullptr;
+Win32::Icon appIcon = nullptr, appIconSm = nullptr;
 Monitors monitors;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 
@@ -827,7 +827,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     //
     s_currentSetting = load_setting(nullptr);
     init_main_controlls(hWnd);
-    add_tasktray_icon(hWnd, hAppIcon);
+    add_tasktray_icon(hWnd, appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     update_monitors();
@@ -928,7 +928,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
   default:
     if (msg == msgTaskbarCreated) {
-      add_tasktray_icon(hWnd, hAppIcon);
+      add_tasktray_icon(hWnd, appIconSm.get());
       return TRUE;
     }
   }
@@ -942,12 +942,12 @@ static void register_main_dialog_class(HINSTANCE hInst) {
   wc.cbClsExtra = 0;
   wc.cbWndExtra = DLGWINDOWEXTRA;
   wc.hInstance = hInst;
-  wc.hIcon = LoadIcon(nullptr, IDI_WINLOGO);
+  wc.hIcon = appIcon.get();
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW);
   wc.lpszMenuName = nullptr;
   wc.lpszClassName = TEXT(UMAPITA_MAIN_WINDOW_CLASS);
-  wc.hIconSm = LoadIcon(nullptr, IDI_WINLOGO);
+  wc.hIconSm = appIconSm.get();
   RegisterClassEx(&wc);
 }
 
@@ -959,9 +959,14 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     return 0;
   }
 
+  auto cx = GetSystemMetrics(SM_CXICON);
+  auto cy = GetSystemMetrics(SM_CYICON);
+
+  appIcon = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), cx, cy, 0);
+  appIconSm = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), 16, 16, 0);
+
   register_main_dialog_class(hInst);
   msgTaskbarCreated = RegisterWindowMessage(TEXT("TaskbarCreated"));
-  hAppIcon = LoadIcon(nullptr, IDI_WINLOGO);
 
   HWND hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
   MSG msg;
@@ -971,5 +976,6 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
+
   return msg.wParam;
 }

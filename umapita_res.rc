@@ -13,6 +13,7 @@ PRODUCTVERSION VER_0,VER_1,VER_2,VER_3
 {
 }
 
+IDI_UMAPITA ICON "umapita.ico"
 
 #define DM_W 260
 #define DM_H 235
