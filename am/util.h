@@ -123,6 +123,14 @@ decltype(error0) throw_if(decltype(error0) c, const char *msg = nullptr) {
   return throw_if<Exception, errors...>(c, msg);
 }
 
+template <class Exception, typename Value, Value error0, Value... errors>
+Value throw_if(Value c, const char *msg = nullptr) {
+  if (c == error0) {
+    throw Exception{c, msg};
+  }
+  return throw_if<Exception, Value, errors...>(c, msg);
+}
+
 template <typename Code, Code OK, class Identifier = Code>
 struct ErrorCode : public RuntimeError<ErrorCode<Code, OK, Identifier>> {
   explicit ErrorCode(Code c = Code{}, const char *msg = nullptr) : RuntimeError<ErrorCode<Code, OK, Identifier>>{msg}, code{c} {}
