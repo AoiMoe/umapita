@@ -716,13 +716,19 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     LONG idealCW = 0, idealCH = 0;
     switch (s.axis) {
     case PerOrientationSetting::Width: {
-      auto sz = s.size == 0 ? mW : s.size;
+      // 幅方向でサイズ指定
+      // - s.size が正ならウィンドウの幅を s.size にする
+      // - s.size が 0 ならウィンドウの幅を画面幅に合わせる
+      // - s.size が負ならウィンドウの幅を画面の幅から abs(s.size) を引いた値にする
+      auto sz = s.size > 0 ? s.size : mW + s.size;
       idealCW = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncW;
       idealCH = s.aspectY * idealCW / s.aspectX;
       break;
     }
     case PerOrientationSetting::Height: {
-      auto sz = s.size == 0 ? mH : s.size;
+      // 高さ方向でサイズ指定
+      // s.size の符号については同上
+      auto sz = s.size > 0 ? s.size : mH + s.size;
       idealCH = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncH;
       idealCW = s.aspectX * idealCH / s.aspectY;
       break;
