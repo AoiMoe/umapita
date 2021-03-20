@@ -35,6 +35,7 @@ UINT msgTaskbarCreated = 0;
 Win32::Icon appIcon = nullptr, appIconSm = nullptr;
 Monitors monitors;
 HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
+HFONT hFontMainDialog = nullptr;
 
 //
 // 監視対象ウィンドウの状態
@@ -168,6 +169,107 @@ constexpr PerOrientationSettingID horizontalSettingID = {
   // offsetY
   IDC_H_OFFSET_Y,
 };
+
+
+//
+// カスタムグループボックス
+//
+// WndProc をオーバライドしていくつかの WM を置き換える
+//
+class CustomGroupBox {
+  HWND m_hWnd = nullptr;
+  WNDPROC m_lpPrevWndFunc = nullptr;
+  bool m_isSelected = false;
+  //
+  static LRESULT WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto self = reinterpret_cast<CustomGroupBox *>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+    switch (msg) {
+    case WM_PAINT:
+      AM::try_or_void([self, hWnd]() { self->on_paint(hWnd); });
+      return 0;
+    case WM_GETDLGCODE:
+      return DLGC_STATIC;
+    case WM_NCHITTEST:
+      return HTTRANSPARENT;
+    }
+    return CallWindowProc(self->m_lpPrevWndFunc, hWnd, msg, wParam, lParam);
+  }
+  void on_paint(HWND hWnd) {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hWnd, &ps);
+
+    // テキスト描画
+    auto scopedSelect = Win32::scoped_select_font(hdc, hFontMainDialog);
+
+    TEXTMETRIC tm;
+    GetTextMetrics(hdc, &tm);
+
+    TCHAR text[100];
+    int len = GetWindowText(hWnd, text, std::size(text));
+
+    SIZE size;
+    GetTextExtentPoint32(hdc, text, len, &size);
+
+    {
+      auto scopedBkMode = Win32::scoped_set_bk_mode(hdc, TRANSPARENT);
+      auto scopedTextColor = Win32::scoped_set_text_color(hdc, GetSysColor(COLOR_WINDOWTEXT));
+      TextOut(hdc, tm.tmAveCharWidth*5/4, 0, text, len);
+    }
+
+    // 枠描画
+    RECT rect;
+    GetClientRect(hWnd, &rect);
+    if (len) {
+      // テキスト部分を描画エリアから除外する
+      auto r = Win32::create_rect_region(tm.tmAveCharWidth, 0, tm.tmAveCharWidth*3/2 + size.cx, size.cy);
+      ExtSelectClipRgn(hdc, r.get(), RGN_DIFF);
+    }
+    {
+      // 選択状態のときは黒くて幅 2 のラインを、非選択状態のときは灰色で幅 1 のラインを描く
+      auto r = Win32::create_rect_region(rect.left, rect.top+size.cy/2, rect.right, rect.bottom);
+      auto hBrush = reinterpret_cast<HBRUSH>(GetStockObject(m_isSelected ? BLACK_BRUSH : LTGRAY_BRUSH));
+      auto w = m_isSelected ? 2 : 1;
+      FrameRgn(hdc, r.get(), hBrush, w, w);
+    }
+    SelectClipRgn(hdc, nullptr);
+
+    EndPaint(hWnd, &ps);
+  }
+  void redraw() {
+    if (m_hWnd) {
+      auto hWndParent = GetParent(m_hWnd);
+      RECT rect;
+      GetWindowRect(m_hWnd, &rect);
+      MapWindowPoints(HWND_DESKTOP, hWndParent, reinterpret_cast<LPPOINT>(&rect), 2);
+      InvalidateRect(hWndParent, &rect, true);
+      UpdateWindow(hWndParent);
+    }
+  }
+public:
+  CustomGroupBox() { }
+  void override_window_proc(HWND hWnd) {
+    m_hWnd = hWnd;
+    m_lpPrevWndFunc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(hWnd, GWLP_WNDPROC));
+    SetWindowLongPtr(hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WndProc));
+    SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    redraw();
+  }
+  void restore_window_proc() {
+    if (m_hWnd) {
+      SetWindowLongPtr(m_hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(m_lpPrevWndFunc));
+      SetWindowLongPtr(m_hWnd, GWLP_USERDATA, 0);
+      m_hWnd = nullptr;
+      m_lpPrevWndFunc = nullptr;
+    }
+  }
+  void set_selected(bool isSelected) {
+    if ((m_isSelected && !isSelected) || (!m_isSelected && isSelected)) {
+      m_isSelected = isSelected;
+      redraw();
+    }
+  }
+};
+CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 
 
 //
@@ -806,16 +908,17 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
               tmp2);
   }
   SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
-  LoadString(hInstance, isVertical ? IDS_FOCUSED_ORIGIN_VERTICAL:IDS_ORIGIN_VERTICAL, tmp, std::size(tmp));
-  SetWindowText(GetDlgItem(hWnd, IDC_V_GROUPBOX), tmp);
-  LoadString(hInstance, isHorizontal ? IDS_FOCUSED_ORIGIN_HORIZONTAL:IDS_ORIGIN_HORIZONTAL, tmp, std::size(tmp));
-  SetWindowText(GetDlgItem(hWnd, IDC_H_GROUPBOX), tmp);
+  s_verticalGroupBox.set_selected(isVertical);
+  s_horizontalGroupBox.set_selected(isHorizontal);
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   static bool isDialogChanged = false;
   switch (msg) {
   case WM_INITDIALOG: {
+    // override wndproc for group boxes.
+    s_verticalGroupBox.override_window_proc(GetDlgItem(hWnd, IDC_V_GROUPBOX));
+    s_horizontalGroupBox.override_window_proc(GetDlgItem(hWnd, IDC_H_GROUPBOX));
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
     TCHAR tmp[128];
@@ -835,6 +938,8 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   }
 
   case WM_DESTROY:
+    s_verticalGroupBox.restore_window_proc();
+    s_horizontalGroupBox.restore_window_proc();
     PostQuitMessage(0);
     return TRUE;
 
@@ -924,6 +1029,11 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
   case WM_DISPLAYCHANGE:
     update_monitors();
+    return TRUE;
+
+  case WM_SETFONT:
+    // ダイアログのフォントを明示的に設定していると呼ばれる
+    hFontMainDialog = reinterpret_cast<HFONT>(wParam);
     return TRUE;
 
   default:

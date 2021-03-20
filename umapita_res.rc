@@ -37,7 +37,7 @@ CLASS UMAPITA_MAIN_WINDOW_CLASS
       AUTORADIOBUTTON "",IDC_##vh##_ORIGIN_SE,x+7+15+15,y+11+12+12,10,10
 
 #define DEF_PER_ORIENTATION(name, vh, x, y) \
-  GROUPBOX name,IDC_##vh##_GROUPBOX,x,y,DM_W-10,100 \
+  CONTROL name,IDC_##vh##_GROUPBOX,"BUTTON",BS_OWNERDRAW,x,y,DM_W-10,100 \
     LTEXT           "領域",        -1,                    x+5,  y+13,20,10 \
     AUTORADIOBUTTON "外枠",        IDC_##vh##_WHOLE_AREA, x+25, y+12,25,10,WS_TABSTOP|WS_GROUP \
     AUTORADIOBUTTON "内枠",        IDC_##vh##_CLIENT_AREA,x+55, y+12,55,10 \
@@ -83,8 +83,4 @@ STRINGTABLE
   IDS_QUIT "終了(&Q)"
   IDS_VERTICAL "縦"
   IDS_HORIZONTAL "横"
-  IDS_ORIGIN_VERTICAL "縦画面"
-  IDS_ORIGIN_HORIZONTAL "横画面"
-  IDS_FOCUSED_ORIGIN_VERTICAL "■■■縦画面■■■"
-  IDS_FOCUSED_ORIGIN_HORIZONTAL "■■■横画面■■■"
 }
