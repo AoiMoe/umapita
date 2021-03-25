@@ -18,6 +18,7 @@ constexpr int MIN_HEIGHT = 100;
 // reinterpret_cast は constexpr ではないので constexpr auto REG_ROOT_KEY = HKEY_CURRENT_USER; だと通らない
 #define REG_ROOT_KEY HKEY_CURRENT_USER
 constexpr TCHAR REG_PROJECT_ROOT_PATH[] = TEXT("Software\\AoiMoe\\umapita");
+constexpr TCHAR REG_PROFILES_SUBKEY[] = TEXT("profiles");
 constexpr auto MAX_PROFILE_NAME = 100;
 
 struct Monitor {
@@ -65,7 +66,6 @@ struct PerOrientationSetting {
 };
 
 struct Setting {
-  bool isEnabled = true;
   // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
   PerOrientationSetting verticalSetting{
     .isConsiderTaskbar = true,
@@ -83,7 +83,14 @@ struct Setting {
 
 constexpr Setting DEFAULT_SETTING{};
 
-Setting s_currentSetting{DEFAULT_SETTING};
+struct GlobalSetting {
+  bool isEnabled = true;
+  Setting currentProfile{DEFAULT_SETTING};
+};
+
+constexpr GlobalSetting DEFAULT_GLOBAL_SETTING{};
+
+GlobalSetting s_currentGlobalSetting{DEFAULT_GLOBAL_SETTING};
 
 //
 // ダイアログボックス上のコントロールと設定のマッピング
@@ -358,7 +365,7 @@ constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
   {TEXT("hAspectY"), {}, DEFAULT_SETTING.horizontalSetting.aspectY},
 };
 
-constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_SETTING.isEnabled};
+constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
 
 
 struct RegGetFailed : AM::RuntimeError<RegGetFailed> { };
@@ -443,6 +450,8 @@ inline Win32::tstring make_regpath(LPCTSTR profileName) {
 
   if (profileName) {
     tmp += TEXT("\\");
+    tmp += REG_PROFILES_SUBKEY;
+    tmp += TEXT("\\");
     tmp += profileName;
   }
   return tmp;
@@ -483,7 +492,6 @@ static Setting load_setting(LPCTSTR profileName) {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
       return Setting{
-        reg_get(key, isEnabledRegMap),
         reg_get_per_orientation_setting(key, verticalSettingRegMap),
         reg_get_per_orientation_setting(key, horizontalSettingRegMap),
       };
@@ -504,7 +512,6 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   try {
     [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, isEnabledRegMap, s.isEnabled);
       reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
       reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
     }
@@ -515,6 +522,45 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
     Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
   }
 }
+
+static GlobalSetting load_global_setting() {
+  auto path = make_regpath(nullptr);
+  auto isEnabled = DEFAULT_GLOBAL_SETTING.isEnabled;
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    try {
+      isEnabled = reg_get(key, isEnabledRegMap);
+    }
+    catch (RegGetFailed &) {
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+  return GlobalSetting{isEnabled, load_setting(nullptr)};
+}
+
+static void save_global_setting(const GlobalSetting &s) {
+  auto path = make_regpath(nullptr);
+
+  try {
+    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    try {
+      reg_put(key, isEnabledRegMap, s.isEnabled);
+    }
+    catch (RegPutFailed &) {
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+  save_setting(nullptr, s.currentProfile);
+}
+
+
+//
+// UI
+//
 
 inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
   auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
@@ -667,7 +713,8 @@ struct AdjustTargetResult {
 
 static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) {
   static TargetStatus lastTargetStatus;
-  auto const &setting = s_currentSetting;
+  auto const &setting = s_currentGlobalSetting;
+  auto const &profile = setting.currentProfile;
 
   // ターゲット情報の更新
   TargetStatus ts = get_target_information();
@@ -690,7 +737,7 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerOrientationSetting &s = cW > cH ? setting.horizontalSetting : setting.verticalSetting;
+    const PerOrientationSetting &s = cW > cH ? profile.horizontalSetting : profile.verticalSetting;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
     if (!pMonitor) {
@@ -871,17 +918,17 @@ static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingI
 }
 
 static void init_main_controlls(HWND hWnd) {
-  auto const &setting = s_currentSetting;
+  auto const &setting = s_currentGlobalSetting;
   set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
-  init_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
-  init_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
+  init_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
+  init_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
 }
 
 static void on_update_dialog_items(HWND hWnd) {
-  auto &setting = s_currentSetting;
+  auto &setting = s_currentGlobalSetting;
   setting.isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
-  get_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
+  get_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
+  get_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
 }
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
@@ -925,7 +972,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
-    s_currentSetting = load_setting(nullptr);
+    s_currentGlobalSetting = load_global_setting();
     init_main_controlls(hWnd);
     add_tasktray_icon(hWnd, appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
@@ -978,7 +1025,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
       return TRUE;
 
     case IDC_QUIT:
-      save_setting(nullptr, s_currentSetting);
+      save_global_setting(s_currentGlobalSetting);
       delete_tasktray_icon(hWnd);
       KillTimer(hWnd, TIMER_ID);
       DestroyWindow(hWnd);
