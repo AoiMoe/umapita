@@ -79,6 +79,46 @@ inline Icon load_icon_image(HINSTANCE hInst, LPCTSTR name, int cx, int cy, UINT 
 }
 
 //
+// menu
+//
+namespace Bits_ {
+
+struct HMenuDeleter {
+  using pointer = HMENU;
+  void operator () (pointer p) noexcept {
+    if (p)
+      DestroyMenu(p);
+  }
+};
+
+struct HBorrowedMenuDeleter {
+  using pointer = HMENU;
+  void operator () (pointer) noexcept {
+  }
+};
+
+using Menu = std::unique_ptr<HMENU, HMenuDeleter>;
+using BorrowedMenu = std::unique_ptr<HMENU, HBorrowedMenuDeleter>;
+
+} // namespace Bits_
+
+using Menu = Bits_::Menu;
+using BorrowedMenu = Bits_::BorrowedMenu;
+
+inline Menu create_popup_menu() {
+  return Menu{CreatePopupMenu()};
+}
+
+inline Menu load_menu(HINSTANCE hInstance, LPCTSTR lpMenu) {
+  return Menu{LoadMenu(hInstance, lpMenu)};
+}
+
+template <typename T>
+BorrowedMenu get_sub_menu(const T &m, int n) {
+  return BorrowedMenu{throw_if<Win32ErrorCode, HMENU, nullptr>(GetSubMenu(m.get(), n))};
+}
+
+//
 // create GDI objects
 //
 
