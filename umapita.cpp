@@ -34,7 +34,6 @@ HINSTANCE hInstance;
 UINT msgTaskbarCreated = 0;
 Win32::Icon appIcon = nullptr, appIconSm = nullptr;
 Monitors monitors;
-HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 HFONT hFontMainDialog = nullptr;
 
 //
@@ -543,28 +542,24 @@ static void delete_tasktray_icon(HWND hWnd) {
 static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
   POINT point;
   TPMPARAMS tpmp, *pTpmp = nullptr;
-  HMENU hMenu, hTasktrayMenu;
 
-    if (isTray) {
-      RECT rect = { 0, 0, 0, 0 };
-      HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
-      if (hwndShell) {
-        GetWindowRect(hwndShell, &rect);
-        tpmp = Win32::make_sized_pod<TPMPARAMS>();
-        tpmp.rcExclude = rect;
-        pTpmp = &tpmp;
-      }
+  if (isTray) {
+    RECT rect = { 0, 0, 0, 0 };
+    HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
+    if (hwndShell) {
+      GetWindowRect(hwndShell, &rect);
+      tpmp = Win32::make_sized_pod<TPMPARAMS>();
+      tpmp.rcExclude = rect;
+      pTpmp = &tpmp;
     }
+  }
 
-    GetCursorPos(&point);
-    SetForegroundWindow(hWnd);
+  GetCursorPos(&point);
+  SetForegroundWindow(hWnd);
 
-    hMenu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
-    hTasktrayMenu = GetSubMenu(hMenu, 0);
-    TrackPopupMenuEx(hTasktrayMenu,
-                     TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y,
-                     hWnd, pTpmp);
-    DestroyMenu(hMenu);
+  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
+  auto submenu = Win32::get_sub_menu(menu, 0);
+  TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, hWnd, pTpmp);
 }
 
 using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
@@ -623,8 +618,8 @@ static void update_monitors() {
   monitors = std::move(ret);
 }
 
-static HMENU create_monitors_menu(int idbase) {
-  HMENU hMenu = CreatePopupMenu();
+static Win32::Menu create_monitors_menu(int idbase) {
+  auto menu = Win32::create_popup_menu();
   int id = idbase;
   int index = -1;
 
@@ -632,23 +627,19 @@ static HMENU create_monitors_menu(int idbase) {
     TCHAR tmp[1024];
     _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
               index++, whole.left, whole.top, whole.right, whole.bottom, name.c_str());
-    AppendMenu(hMenu, MF_STRING, id++, tmp);
+    AppendMenu(menu.get(), MF_STRING, id++, tmp);
   }
 
-  return hMenu;
+  return menu;
 }
 
-static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
-  if (hMenu) {
-    DestroyMenu(hMenu);
-    hMenu = nullptr;
-  }
-  hMenu = create_monitors_menu(idbase);
+template <typename MenuType>
+void show_button_menu(HWND hWnd, int id, const MenuType &menu) {
   auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   RECT rect{0, 0, 0, 0};
   GetWindowRect(GetDlgItem(hWnd, id), &rect);
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
+  TrackPopupMenuEx(menu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
 }
 
 static const Monitor *get_current_monitor(int monitorNumber) {
@@ -999,13 +990,12 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
       return TRUE;
 
     case IDC_V_SELECT_MONITORS:
-      popup_monitors_menu(hWnd, IDC_V_SELECT_MONITORS, hMenuVMonitors, IDM_V_MONITOR_BASE);
+      show_button_menu(hWnd, IDC_V_SELECT_MONITORS, create_monitors_menu(IDM_V_MONITOR_BASE));
       return TRUE;
 
     case IDC_H_SELECT_MONITORS:
-      popup_monitors_menu(hWnd, IDC_H_SELECT_MONITORS, hMenuHMonitors, IDM_H_MONITOR_BASE);
+      show_button_menu(hWnd, IDC_H_SELECT_MONITORS, create_monitors_menu(IDM_H_MONITOR_BASE));
       return TRUE;
-
     }
     if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
       isDialogChanged = true;
