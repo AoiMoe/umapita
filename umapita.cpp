@@ -66,6 +66,7 @@ struct PerOrientationSetting {
 };
 
 struct Setting {
+  bool isLocked = false;
   // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
   PerOrientationSetting verticalSetting{
     .isConsiderTaskbar = true,
@@ -375,6 +376,7 @@ constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
   {TEXT("hAspectY"), {}, DEFAULT_SETTING.horizontalSetting.aspectY},
 };
 
+constexpr RegMap<RegBoolMap> isLockedRegMap = {TEXT("isLocked"), RegBoolMap{}, DEFAULT_SETTING.isLocked};
 constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
 
 
@@ -502,6 +504,7 @@ static Setting load_setting(LPCTSTR profileName) {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
       return Setting{
+        reg_get(key, isLockedRegMap),
         reg_get_per_orientation_setting(key, verticalSettingRegMap),
         reg_get_per_orientation_setting(key, horizontalSettingRegMap),
       };
@@ -522,6 +525,7 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   try {
     [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
+      reg_put(key, isLockedRegMap, s.isLocked);
       reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
       reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
     }
@@ -1022,6 +1026,42 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
                                                 }));
 }
 
+template <typename Enum, std::size_t Num>
+static void update_radio_button_lock_status(HWND hWnd, const RadioButtonMap<Enum, Num> &m, bool isLocked) {
+  for ([[maybe_unused]] auto const &[tag, id] : m) {
+    EnableWindow(GetDlgItem(hWnd, id), !isLocked);
+  }
+}
+
+static void update_per_orientation_lock_status(HWND hWnd, const PerOrientationSettingID &ids, bool isLocked) {
+  auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
+  auto set = [isLocked, get](auto id) { EnableWindow(get(id), !isLocked); };
+  set(ids.monitorNumber);
+  set(ids.isConsiderTaskbar.id);
+  update_radio_button_lock_status(hWnd, ids.windowArea, isLocked);
+  set(ids.size);
+  update_radio_button_lock_status(hWnd, ids.axis, isLocked);
+  update_radio_button_lock_status(hWnd, ids.origin, isLocked);
+  set(ids.offsetX);
+  set(ids.offsetY);
+}
+
+static void update_lock_status(HWND hWnd, bool isLocked) {
+  update_per_orientation_lock_status(hWnd, verticalSettingID, isLocked);
+  update_per_orientation_lock_status(hWnd, horizontalSettingID, isLocked);
+}
+
+static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu(bool isLocked) {
+  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_PROFILE));
+  auto submenu = Win32::get_sub_menu(menu, 0);
+  // IDC_LOCK のチェック状態を変更する
+  auto mii = Win32::make_sized_pod<MENUITEMINFO>();
+  mii.fMask |= MIIM_STATE;
+  mii.fState |= isLocked ? MFS_CHECKED : 0;
+  SetMenuItemInfo(submenu.get(), IDC_LOCK, false, &mii);
+  return std::make_pair(std::move(menu), std::move(submenu));
+}
+
 static void init_main_controlls(HWND hWnd) {
   auto &setting = s_currentGlobalSetting;
   static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
@@ -1032,6 +1072,19 @@ static void init_main_controlls(HWND hWnd) {
   init_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
   init_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
 
+  register_handler_map(s_handlerMap, IDC_OPEN_PROFILE_MENU,
+                       make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
+                                                []() {
+                                                  Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
+                                                  return create_profile_menu(s_currentGlobalSetting.currentProfile.isLocked);
+                                                }));
+  register_handler_map(s_handlerMap, IDC_LOCK,
+                       [](HWND hWnd, UINT, WPARAM, LPARAM) {
+                         Log::debug(TEXT("IDC_LOCK received"));
+                         s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
+                         update_lock_status(hWnd, s_currentGlobalSetting.currentProfile.isLocked);
+                         return HandlerResult{true, TRUE};
+                       });
 }
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
@@ -1098,6 +1151,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
                            SetForegroundWindow(hWnd);
                            return HandlerResult{true, TRUE};
                          });
+    update_lock_status(hWnd, s_currentGlobalSetting.currentProfile.isLocked);
     add_tasktray_icon(hWnd, appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
