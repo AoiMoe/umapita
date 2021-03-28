@@ -109,6 +109,11 @@ constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
 template <typename Enum, std::size_t Num>
 using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
 
+struct SelectMonitorMap {
+  int id;
+  int base;
+};
+
 struct PerOrientationSettingID {
   int monitorNumber;
   CheckButtonMap<bool> isConsiderTaskbar;
@@ -117,6 +122,7 @@ struct PerOrientationSettingID {
   RadioButtonMap<PerOrientationSetting::SizeAxis, 2> axis;
   RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
+  SelectMonitorMap selectMonitor;
 };
 
 constexpr PerOrientationSettingID verticalSettingID = {
@@ -146,6 +152,8 @@ constexpr PerOrientationSettingID verticalSettingID = {
   IDC_V_OFFSET_X,
   // offsetY
   IDC_V_OFFSET_Y,
+  // selectMonitor
+  {IDC_V_SELECT_MONITORS, IDM_V_MONITOR_BASE},
 };
 constexpr PerOrientationSettingID horizontalSettingID = {
   // monitorNumber
@@ -174,6 +182,8 @@ constexpr PerOrientationSettingID horizontalSettingID = {
   IDC_H_OFFSET_X,
   // offsetY
   IDC_H_OFFSET_Y,
+  // selectMonitor
+  {IDC_H_SELECT_MONITORS, IDM_H_MONITOR_BASE},
 };
 
 
@@ -510,7 +520,7 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   auto path = make_regpath(profileName);
 
   try {
-    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
       reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
       reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
@@ -680,12 +690,12 @@ static Win32::Menu create_monitors_menu(int idbase) {
 }
 
 template <typename MenuType>
-void show_button_menu(HWND hWnd, int id, const MenuType &menu) {
+void show_button_menu(HWND hWnd, const MenuType &menu) {
   auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   RECT rect{0, 0, 0, 0};
-  GetWindowRect(GetDlgItem(hWnd, id), &rect);
+  GetWindowRect(hWnd, &rect);
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(menu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
+  TrackPopupMenuEx(menu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, GetParent(hWnd), &tpmp);
 }
 
 static const Monitor *get_current_monitor(int monitorNumber) {
@@ -846,6 +856,23 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
   return {true, lastTargetStatus};
 }
 
+
+//
+// main dialog
+//
+using HandlerResult = std::pair<bool, INT_PTR>;
+using Handler = std::function<HandlerResult (HWND, UINT, WPARAM, LPARAM)>;
+using HandlerMap = std::unordered_map<int, Handler>;
+
+static bool isDialogChanged = false;
+static HandlerMap s_handlerMap;
+
+template <typename Enum, std::size_t Num>
+void register_handler_map(HandlerMap &hm, const RadioButtonMap<Enum, Num> &m, Handler h) {
+  for (auto const &[tag, id] : m)
+    hm.emplace(id, h);
+}
+
 template <typename Enum, std::size_t Num>
 static void set_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m, Enum v) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
@@ -856,14 +883,9 @@ static void set_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m, Enu
       Button_SetCheck(get(id), BST_UNCHECKED);
 }
 
-template <typename Enum, std::size_t Num>
-static Enum get_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m) {
-  auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
-  for (auto const &[tag, id] : m) {
-    if (Button_GetCheck(get(id)) == BST_CHECKED)
-      return tag;
-  }
-  return m[0].first;
+template <typename Enum>
+void register_handler_map(HandlerMap &hm, const CheckButtonMap<Enum> &m, Handler h) {
+  hm.emplace(m.id, h);
 }
 
 template <typename Enum>
@@ -871,9 +893,12 @@ static void set_check_button(HWND hWnd, const CheckButtonMap<Enum> &m, Enum v) {
   Button_SetCheck(GetDlgItem(hWnd, m.id), m.checked == v ? BST_CHECKED : BST_UNCHECKED);
 }
 
-template <typename Enum>
-static Enum get_check_button(HWND hWnd, const CheckButtonMap<Enum> &m) {
-  return Button_GetCheck(GetDlgItem(hWnd, m.id)) == BST_CHECKED ? m.checked : m.unchecked;
+void register_handler_map(HandlerMap &hm, int id, Handler h) {
+  hm.emplace(id, h);
+}
+
+void register_handler_map(HandlerMap &hm, int id, std::function<HandlerResult (HWND)> h) {
+  register_handler_map(hm, id, [h](HWND hWnd, UINT, WPARAM, LPARAM) { return h(hWnd); });
 }
 
 static void set_monitor_number(HWND hWnd, int id, int num) {
@@ -882,7 +907,82 @@ static void set_monitor_number(HWND hWnd, int id, int num) {
   SetWindowText(GetDlgItem(hWnd, id), buf);
 }
 
-static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, const PerOrientationSetting &setting) {
+static Handler make_long_integer_box_handler(LONG &stor) {
+  return [&stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case EN_CHANGE: {
+             int id = LOWORD(wParam);
+             TCHAR buf[256];
+             GetWindowText(reinterpret_cast<HWND>(lParam), buf, std::size(buf));
+             LONG val = _tcstol(buf, nullptr, 10);
+             if (val != stor) {
+               Log::debug(TEXT("text box %X changed: %d -> %d"), id, stor, val);
+               stor = val;
+               isDialogChanged = true;
+             }
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename Enum>
+Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor) {
+  return [&m, &stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             int id = LOWORD(wParam);
+             auto val = Button_GetCheck(reinterpret_cast<HWND>(lParam)) == BST_CHECKED ? m.checked : m.unchecked;
+             if (val != stor) {
+               Log::debug(TEXT("check box %X changed: %d -> %d"), id, static_cast<int>(stor) , static_cast<int>(val));
+               stor = val;
+               isDialogChanged = true;
+             }
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename Enum, std::size_t Num>
+Handler make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
+  return [&m, &stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             int cid = LOWORD(wParam);
+             for (auto const &[tag, id] : m) {
+               if (id == cid && tag != stor) {
+                 Log::debug(TEXT("radio button %X changed: %d -> %d"), cid, static_cast<int>(stor), static_cast<int>(tag));
+                 stor = tag;
+                 isDialogChanged = true;
+                 return HandlerResult{true, TRUE};
+               }
+             }
+             Log::warning(TEXT("BN_CLICKED to the unknown radio button %X is received"), cid);
+             return HandlerResult{true, FALSE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename MenuFactory>
+Handler make_menu_button_handler(int id, MenuFactory f) {
+  return [id, f](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             [[maybe_unused]] auto [housekeeper, menu] = f();
+             show_button_menu(reinterpret_cast<HWND>(lParam), menu);
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto setint = [get](auto id, int v) {
                   TCHAR buf[256];
@@ -890,45 +990,48 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
                   SetWindowText(get(id), buf);
                 };
 
+  register_handler_map(s_handlerMap, ids.monitorNumber, make_long_integer_box_handler(setting.monitorNumber));
   setint(ids.monitorNumber, setting.monitorNumber);
-  set_check_button(hWnd, ids.isConsiderTaskbar, setting.isConsiderTaskbar);
-  set_radio_buttons(hWnd, ids.windowArea, setting.windowArea);
-  setint(ids.size, setting.size);
-  set_radio_buttons(hWnd, ids.axis, setting.axis);
-  set_radio_buttons(hWnd, ids.origin, setting.origin);
-  setint(ids.offsetX, setting.offsetX);
-  setint(ids.offsetY, setting.offsetY);
-}
 
-static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
-  auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
-  auto getint = [get](auto id) {
-                  TCHAR buf[256];
-                  GetWindowText(get(id), buf, std::size(buf));
-                  return _tcstol(buf, nullptr, 10);
-                };
-  setting.monitorNumber = getint(ids.monitorNumber);
-  setting.isConsiderTaskbar = get_check_button(hWnd, ids.isConsiderTaskbar);
-  setting.windowArea = get_radio_buttons(hWnd, ids.windowArea);
-  setting.size = getint(ids.size);
-  setting.axis = get_radio_buttons(hWnd, ids.axis);
-  setting.origin = get_radio_buttons(hWnd, ids.origin);
-  setting.offsetX = getint(ids.offsetX);
-  setting.offsetY = getint(ids.offsetY);
+  register_handler_map(s_handlerMap, ids.isConsiderTaskbar, make_check_button_handler(ids.isConsiderTaskbar, setting.isConsiderTaskbar));
+  set_check_button(hWnd, ids.isConsiderTaskbar, setting.isConsiderTaskbar);
+
+  register_handler_map(s_handlerMap, ids.windowArea, make_radio_button_map(ids.windowArea, setting.windowArea));
+  set_radio_buttons(hWnd, ids.windowArea, setting.windowArea);
+
+  register_handler_map(s_handlerMap, ids.size, make_long_integer_box_handler(setting.size));
+  setint(ids.size, setting.size);
+
+  register_handler_map(s_handlerMap, ids.axis, make_radio_button_map(ids.axis, setting.axis));
+  set_radio_buttons(hWnd, ids.axis, setting.axis);
+
+  register_handler_map(s_handlerMap, ids.origin, make_radio_button_map(ids.origin, setting.origin));
+  set_radio_buttons(hWnd, ids.origin, setting.origin);
+
+  register_handler_map(s_handlerMap, ids.offsetX, make_long_integer_box_handler(setting.offsetX));
+  setint(ids.offsetX, setting.offsetX);
+
+  register_handler_map(s_handlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
+  setint(ids.offsetY, setting.offsetY);
+
+  register_handler_map(s_handlerMap, ids.selectMonitor.id,
+                       make_menu_button_handler(ids.selectMonitor.id,
+                                                [ids]() {
+                                                  Log::debug(TEXT("selectMonitor received"));
+                                                  return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
+                                                }));
 }
 
 static void init_main_controlls(HWND hWnd) {
-  auto const &setting = s_currentGlobalSetting;
-  set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
+  auto &setting = s_currentGlobalSetting;
+  static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
+
+  register_handler_map(s_handlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled));
+  set_check_button(hWnd, m, setting.isEnabled);
+
   init_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
   init_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
-}
 
-static void on_update_dialog_items(HWND hWnd) {
-  auto &setting = s_currentGlobalSetting;
-  setting.isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
-  get_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
 }
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
@@ -957,7 +1060,6 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  static bool isDialogChanged = false;
   switch (msg) {
   case WM_INITDIALOG: {
     // override wndproc for group boxes.
@@ -974,10 +1076,34 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     //
     s_currentGlobalSetting = load_global_setting();
     init_main_controlls(hWnd);
+    register_handler_map(s_handlerMap, IDC_HIDE,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_HIDE received"));
+                           ShowWindow(hWnd, SW_HIDE);
+                           return HandlerResult{true, TRUE};
+                         });
+    register_handler_map(s_handlerMap, IDC_QUIT,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_QUIT received"));
+                           save_global_setting(s_currentGlobalSetting);
+                           delete_tasktray_icon(hWnd);
+                           KillTimer(hWnd, TIMER_ID);
+                           DestroyWindow(hWnd);
+                           return HandlerResult{true, TRUE};
+                         });
+    register_handler_map(s_handlerMap, IDC_SHOW,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_SHOW received"));
+                           ShowWindow(hWnd, SW_SHOW);
+                           SetForegroundWindow(hWnd);
+                           return HandlerResult{true, TRUE};
+                         });
     add_tasktray_icon(hWnd, appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     update_monitors();
+    if (auto r = adjust_target(hWnd, true); r.isChanged)
+      update_target_status_text(hWnd, r.targetStatus);
     return TRUE;
   }
 
@@ -1017,40 +1143,14 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
   case WM_COMMAND: {
     UINT id = LOWORD(wParam);
-    if (id >= IDC_BEGIN && id <= IDC_END)
-      isDialogChanged = true;
-    switch (id) {
-    case IDC_HIDE:
-      ShowWindow(hWnd, SW_HIDE);
-      return TRUE;
-
-    case IDC_QUIT:
-      save_global_setting(s_currentGlobalSetting);
-      delete_tasktray_icon(hWnd);
-      KillTimer(hWnd, TIMER_ID);
-      DestroyWindow(hWnd);
-      return TRUE;
-
-    case IDC_SHOW:
-      ShowWindow(hWnd, SW_SHOW);
-      SetForegroundWindow(hWnd);
-      return TRUE;
-
-    case IDC_V_SELECT_MONITORS:
-      show_button_menu(hWnd, IDC_V_SELECT_MONITORS, create_monitors_menu(IDM_V_MONITOR_BASE));
-      return TRUE;
-
-    case IDC_H_SELECT_MONITORS:
-      show_button_menu(hWnd, IDC_H_SELECT_MONITORS, create_monitors_menu(IDM_H_MONITOR_BASE));
-      return TRUE;
-    }
+    if (auto i = s_handlerMap.find(static_cast<int>(id)); i != s_handlerMap.end())
+      if (auto ret = i->second(hWnd, msg, wParam, lParam); ret.first)
+        return ret.second;
     if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
-      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
       return TRUE;
     }
     if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + monitors.size()) {
-      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
       return TRUE;
     }
@@ -1062,8 +1162,6 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return TRUE;
 
   case WM_TIMER:
-    if (isDialogChanged)
-      on_update_dialog_items(hWnd);
     if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged)
       update_target_status_text(hWnd, r.targetStatus);
     isDialogChanged = false;
