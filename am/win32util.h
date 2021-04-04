@@ -7,6 +7,51 @@ namespace AM::Win32 {
 using tstring = std::basic_string<TCHAR>;
 
 //
+// get null-terminated string from Win32 API and return it as tstring
+//
+template <class GetFunc>
+tstring get_sz(std::size_t len, GetFunc gf) {
+  tstring ret(len+1, TCHAR{});
+  if constexpr (std::is_invocable_v<decltype(gf), LPTSTR, std::size_t>) {
+    if constexpr (std::is_void_v<std::invoke_result_t<decltype(gf), LPTSTR, std::size_t>>) {
+      gf(ret.data(), len);
+      ret.resize(len);
+    } else {
+      auto actuallen = gf(ret.data(), len);
+      ret.resize(actuallen);
+    }
+  } else {
+    if constexpr (std::is_void_v<std::invoke_result_t<decltype(gf), LPTSTR>>) {
+      gf(ret.data());
+      ret.resize(len);
+    } else {
+      auto actuallen = gf(ret.data());
+      ret.resize(actuallen);
+    }
+  }
+  return ret;
+}
+
+template <class GetFunc>
+tstring get_sz(GetFunc gf) {
+  return get_sz(gf(nullptr, 0), gf);
+}
+
+inline tstring get_window_text(HWND hWnd) {
+  return Win32::get_sz(GetWindowTextLength(hWnd),
+                       [=](LPTSTR buf, std::size_t len) { GetWindowText(hWnd, buf, len+1); });
+}
+
+inline tstring load_string(HINSTANCE hInstance, UINT id) {
+  return Win32::get_sz([=]() {
+                         LPVOID *ptr;
+                         return LoadString(hInstance, id, reinterpret_cast<LPTSTR>(&ptr), 0);
+                       }(),
+                       [=](LPTSTR buf, std::size_t len) { LoadString(hInstance, id, buf, len+1); });
+}
+
+
+//
 // make POD struct having cbSize field
 //
 template <class T>
