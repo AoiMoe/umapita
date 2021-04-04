@@ -221,16 +221,16 @@ class CustomGroupBox {
     TEXTMETRIC tm;
     GetTextMetrics(hdc, &tm);
 
-    TCHAR text[100];
-    int len = GetWindowText(hWnd, text, std::size(text));
+    auto text = Win32::get_window_text(hWnd);
+    int len = text.size();
 
     SIZE size;
-    GetTextExtentPoint32(hdc, text, len, &size);
+    GetTextExtentPoint32(hdc, text.c_str(), len, &size);
 
     {
       auto scopedBkMode = Win32::scoped_set_bk_mode(hdc, TRANSPARENT);
       auto scopedTextColor = Win32::scoped_set_text_color(hdc, GetSysColor(COLOR_WINDOWTEXT));
-      TextOut(hdc, tm.tmAveCharWidth*5/4, 0, text, len);
+      TextOut(hdc, tm.tmAveCharWidth*5/4, 0, text.c_str(), len);
     }
 
     // 枠描画
