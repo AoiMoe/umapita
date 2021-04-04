@@ -622,24 +622,6 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
   TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, hWnd, pTpmp);
 }
 
-using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
-static BOOL CALLBACK find_window_callback(HWND hWnd, LPARAM lParam) {
-  auto &[rhWnd, cls, name] = *reinterpret_cast<FindWindowResult *>(lParam);
-  TCHAR tmp[128];
-  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, cls))) &&
-      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, name)))) {
-    rhWnd = hWnd;
-    return FALSE;
-  }
-  return TRUE;
-}
-
-static HWND find_window(LPCTSTR cls, LPCTSTR name) {
-  FindWindowResult ret{nullptr, cls, name};
-  EnumWindows(&find_window_callback, reinterpret_cast<LPARAM>(&ret));
-  return std::get<HWND>(ret);
-}
-
 static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
   Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
   auto mi = Win32::make_sized_pod<MONITORINFOEX>();
@@ -712,7 +694,7 @@ static const Monitor *get_current_monitor(int monitorNumber) {
 }
 
 static TargetStatus get_target_information() {
-  if (auto hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
+  if (auto hWndTarget = FindWindow(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
     auto wi = Win32::make_sized_pod<WINDOWINFO>();
     if (GetWindowInfo(hWndTarget, &wi))
       return {hWndTarget, wi.rcWindow, wi.rcClient};
@@ -1259,7 +1241,7 @@ static void register_main_dialog_class(HINSTANCE hInst) {
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
   hInstance = hInst;
 
-  if (HWND hWnd = find_window(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); hWnd) {
+  if (HWND hWnd = FindWindow(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); hWnd) {
     PostMessage(hWnd, WM_COMMAND, IDC_SHOW, 0);
     return 0;
   }
