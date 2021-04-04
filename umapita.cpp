@@ -1078,16 +1078,14 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
     auto cH = Win32::height(ts.clientRect);
     auto wW = Win32::width(ts.windowRect);
     auto wH = Win32::height(ts.windowRect);
-    TCHAR tmp2[100];
     isHorizontal = cW > cH;
     isVertical = !isHorizontal;
-    LoadString(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
     _stprintf(tmp,
               TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
               ts.windowRect.left, ts.windowRect.top, wW, wH,
               ts.clientRect.left, ts.clientRect.top, cW, cH,
-              tmp2);
+              Win32::load_string(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
   }
   SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
   s_verticalGroupBox.set_selected(isVertical);
@@ -1102,10 +1100,8 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     s_horizontalGroupBox.override_window_proc(GetDlgItem(hWnd, IDC_H_GROUPBOX));
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
-    TCHAR tmp[128];
-    LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, tmp);
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(hInstance, IDS_QUIT).c_str());
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
