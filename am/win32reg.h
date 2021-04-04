@@ -6,9 +6,8 @@ namespace AM::Win32::Reg {
 
 namespace Bits_ {
 
-constexpr std::size_t BUFFER_MAX = 512;
-
 struct ErrorTag {};
+using ErrorCode = ::AM::ErrorCode<LSTATUS, ERROR_SUCCESS, ErrorTag>;
 
 struct HKeyDeleter {
   using pointer = HKEY;
@@ -44,10 +43,54 @@ LPBYTE to_byte_ptr(T *p) noexcept { return reinterpret_cast<LPBYTE>(p); }
 template <typename T>
 const BYTE *to_byte_ptr(const T *p) noexcept { return reinterpret_cast<const BYTE *>(p); }
 
+struct TypeUnmatched : RuntimeError<TypeUnmatched> {
+  DWORD type = 0;
+  TypeUnmatched() : RuntimeError<TypeUnmatched>{} { }
+  TypeUnmatched(DWORD t, const char *msg) : RuntimeError<TypeUnmatched>{msg}, type{t} { }
+};
+
+struct SizeUnmatched : LogicError<SizeUnmatched> {
+  SizeUnmatched() : LogicError<SizeUnmatched>{} { }
+  SizeUnmatched(std::size_t, const char *msg) : LogicError<SizeUnmatched>{msg} { }
+};
+
+struct TypeSize {
+  DWORD type;
+  DWORD size;
+};
+
+template <typename K>
+TypeSize query(const K &key, LPCTSTR name, void *buf, DWORD size) {
+  auto hkey = Bits_::KeyAdaptor<K>(key).get();
+  DWORD type;
+  ErrorCode::ensure_ok(RegQueryValueEx(hkey, name, 0, &type, to_byte_ptr(buf), &size), "RegQueryValueEx failed");
+  return TypeSize{type, size};
+}
+
+template <typename K>
+TypeSize query_type_size(const K &key, LPCTSTR name) {
+  return query(key, name, nullptr, 0);
+}
+
+template <DWORD TypeIndex>
+TypeSize ensure_type(TypeSize typesize) {
+  ensure_expected<TypeUnmatched, TypeIndex>(typesize.type);
+  return typesize;
+}
+
+template <DWORD TypeIndex, typename T>
+TypeSize ensure_type_size(TypeSize typesize) {
+  ensure_expected<SizeUnmatched, sizeof (T)>(typesize.size);
+  return ensure_type<TypeIndex>(typesize);
+}
+
 } // namespace Bits_
 
-using ErrorCode = ::AM::ErrorCode<LSTATUS, ERROR_SUCCESS, Bits_::ErrorTag>;
+using ErrorCode = Bits_::ErrorCode;
 using Key = Bits_::Key;
+using TypeUnmatched = Bits_::TypeUnmatched;
+using SizeUnmatched = Bits_::SizeUnmatched;
+
 
 template <typename K>
 Key open_key(const K &parent, LPCTSTR name, DWORD opts, REGSAM sam) {
@@ -70,19 +113,14 @@ std::pair<Key, DWORD> create_key(const K &parent, LPCTSTR name, DWORD opts, REGS
 
 template <typename K>
 tstring query_sz(const K &key, LPCTSTR name) {
-  TCHAR buf[Bits_::BUFFER_MAX];
-  DWORD type = REG_SZ;
-  DWORD len = sizeof (buf);
-  ErrorCode::ensure_ok(RegQueryValueEx(Bits_::KeyAdaptor<K>(key).get(), name, 0, &type, Bits_::to_byte_ptr(buf), &len), "RegQueryValueEx failed");
-  return buf;
+  auto [type, size] = Bits_::ensure_type<REG_SZ>(Bits_::query_type_size(key, name));
+  return Win32::get_sz(size/sizeof (TCHAR) - 1, [&](LPTSTR buf) { Bits_::ensure_type<REG_SZ>(Bits_::query(key, name, buf, size)); });
 }
 
 template <typename K>
 DWORD query_dword(const K &key, LPCTSTR name) {
   DWORD ret;
-  DWORD type = REG_DWORD;
-  DWORD len = sizeof (ret);
-  ErrorCode::ensure_ok(RegQueryValueEx(Bits_::KeyAdaptor<K>(key).get(), name, 0, &type, Bits_::to_byte_ptr(&ret), &len), "RegQueryValueEx failed");
+  Bits_::ensure_type_size<REG_DWORD, DWORD>(Bits_::query(key, name, &ret, sizeof (ret)));
   return ret;
 }
 
@@ -97,10 +135,24 @@ void set_dword(const K &key, LPCTSTR name, DWORD value) {
   ErrorCode::ensure_ok(RegSetValueEx(Bits_::KeyAdaptor<K>(key).get(), name, 0, REG_DWORD, Bits_::to_byte_ptr(&value), sizeof (value)), "RegSetValueEx failed");
 }
 
-template <typename K>
-void enum_key(const K &key, std::function<void(LPCTSTR)> f) {
-  TCHAR name[Bits_::BUFFER_MAX];
-  for (DWORD i = 0; RegEnumKey(Bits_::KeyAdaptor<K>(key).get(), i, name, std::size(name)) == ERROR_SUCCESS; i++) {
+template <typename K, typename F>
+void enum_key(const K &key, F f) {
+  HKEY hKey = Bits_::KeyAdaptor<K>(key).get();
+  DWORD numSubKeys;
+  DWORD maxSubKeyLen;
+  ErrorCode::ensure_ok(RegQueryInfoKey(hKey,
+                                       nullptr, nullptr,
+                                       nullptr,
+                                       &numSubKeys, &maxSubKeyLen, nullptr,
+                                       nullptr, nullptr, nullptr,
+                                       nullptr,
+                                       nullptr));
+  for (DWORD i = 0; i < numSubKeys; i++) {
+    auto name = Win32::get_sz(maxSubKeyLen,
+                              [=](LPTSTR buf) {
+                                ErrorCode::ensure_ok(RegEnumKey(hKey, i, buf, maxSubKeyLen+1));
+                                return _tcslen(buf);
+                              });
     f(name);
   }
 }
