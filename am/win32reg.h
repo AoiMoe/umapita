@@ -157,4 +157,22 @@ void enum_key(const K &key, F f) {
   }
 }
 
+template <typename K>
+void rename_key(const K &key, LPCTSTR oldName, LPCTSTR newName) {
+  HKEY hKey = Bits_::KeyAdaptor<K>(key).get();
+  ErrorCode::ensure_ok(RegRenameKey(hKey, oldName, newName), "RegRenameKey failed");
+}
+
+template <typename K>
+void delete_key(const K &key, LPCTSTR name) {
+  HKEY hKey = Bits_::KeyAdaptor<K>(key).get();
+  ErrorCode::ensure_ok(RegDeleteKey(hKey, name), "RegDeleteKey failed");
+}
+
+template <typename K>
+void delete_tree(const K &key, LPCTSTR name) {
+  HKEY hKey = Bits_::KeyAdaptor<K>(key).get();
+  ErrorCode::ensure_ok(RegDeleteTree(hKey, name), "RegDeleteTree failed");
+}
+
 } // namespace AM::Win32::Reg
