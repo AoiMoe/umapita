@@ -4,10 +4,12 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <tchar.h>
-#include <vector>
-#include <utility>
-#include <tuple>
-#include <string>
 #include <algorithm>
+#include <functional>
 #include <iterator>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "am/pch.h"

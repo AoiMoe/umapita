@@ -7,6 +7,7 @@ namespace Win32 = AM::Win32;
 using AM::Log;
 
 constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
+constexpr UINT WM_CHANGE_PROFILE = WM_USER+0x1001;
 constexpr UINT TASKTRAY_ID = 1;
 constexpr UINT TIMER_ID = 1;
 constexpr UINT TIMER_PERIOD = 200;
@@ -18,6 +19,7 @@ constexpr int MIN_HEIGHT = 100;
 // reinterpret_cast は constexpr ではないので constexpr auto REG_ROOT_KEY = HKEY_CURRENT_USER; だと通らない
 #define REG_ROOT_KEY HKEY_CURRENT_USER
 constexpr TCHAR REG_PROJECT_ROOT_PATH[] = TEXT("Software\\AoiMoe\\umapita");
+constexpr TCHAR REG_PROFILES_SUBKEY[] = TEXT("profiles");
 constexpr auto MAX_PROFILE_NAME = 100;
 
 struct Monitor {
@@ -34,7 +36,6 @@ HINSTANCE hInstance;
 UINT msgTaskbarCreated = 0;
 Win32::Icon appIcon = nullptr, appIconSm = nullptr;
 Monitors monitors;
-HMENU hMenuVMonitors = nullptr, hMenuHMonitors = nullptr;
 HFONT hFontMainDialog = nullptr;
 
 //
@@ -66,7 +67,7 @@ struct PerOrientationSetting {
 };
 
 struct Setting {
-  bool isEnabled = true;
+  bool isLocked = false;
   // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
   PerOrientationSetting verticalSetting{
     .isConsiderTaskbar = true,
@@ -84,7 +85,22 @@ struct Setting {
 
 constexpr Setting DEFAULT_SETTING{};
 
-Setting s_currentSetting{DEFAULT_SETTING};
+template <typename StringType>
+struct GlobalSettingT {
+  bool isEnabled = true;
+  bool isCurrentProfileChanged = false;
+  StringType currentProfileName{TEXT("")};  // XXX: gcc10 の libstdc++ でも basic_string は constexpr 化されてない
+  Setting currentProfile{DEFAULT_SETTING};
+  template <typename T>
+  GlobalSettingT<T> clone() const {
+    return GlobalSettingT<T>{isEnabled, isCurrentProfileChanged, currentProfileName, currentProfile};
+  }
+};
+using GlobalSetting = GlobalSettingT<Win32::tstring>;
+
+constexpr GlobalSettingT<LPCTSTR> DEFAULT_GLOBAL_SETTING{};
+
+GlobalSetting s_currentGlobalSetting{DEFAULT_GLOBAL_SETTING.clone<Win32::tstring>()};
 
 //
 // ダイアログボックス上のコントロールと設定のマッピング
@@ -103,6 +119,11 @@ constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
 template <typename Enum, std::size_t Num>
 using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
 
+struct SelectMonitorMap {
+  int id;
+  int base;
+};
+
 struct PerOrientationSettingID {
   int monitorNumber;
   CheckButtonMap<bool> isConsiderTaskbar;
@@ -111,6 +132,7 @@ struct PerOrientationSettingID {
   RadioButtonMap<PerOrientationSetting::SizeAxis, 2> axis;
   RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
   int offsetX, offsetY;
+  SelectMonitorMap selectMonitor;
 };
 
 constexpr PerOrientationSettingID verticalSettingID = {
@@ -140,6 +162,8 @@ constexpr PerOrientationSettingID verticalSettingID = {
   IDC_V_OFFSET_X,
   // offsetY
   IDC_V_OFFSET_Y,
+  // selectMonitor
+  {IDC_V_SELECT_MONITORS, IDM_V_MONITOR_BASE},
 };
 constexpr PerOrientationSettingID horizontalSettingID = {
   // monitorNumber
@@ -168,6 +192,8 @@ constexpr PerOrientationSettingID horizontalSettingID = {
   IDC_H_OFFSET_X,
   // offsetY
   IDC_H_OFFSET_Y,
+  // selectMonitor
+  {IDC_H_SELECT_MONITORS, IDM_H_MONITOR_BASE},
 };
 
 
@@ -204,16 +230,16 @@ class CustomGroupBox {
     TEXTMETRIC tm;
     GetTextMetrics(hdc, &tm);
 
-    TCHAR text[100];
-    int len = GetWindowText(hWnd, text, std::size(text));
+    auto text = Win32::get_window_text(hWnd);
+    int len = text.size();
 
     SIZE size;
-    GetTextExtentPoint32(hdc, text, len, &size);
+    GetTextExtentPoint32(hdc, text.c_str(), len, &size);
 
     {
       auto scopedBkMode = Win32::scoped_set_bk_mode(hdc, TRANSPARENT);
       auto scopedTextColor = Win32::scoped_set_text_color(hdc, GetSysColor(COLOR_WINDOWTEXT));
-      TextOut(hdc, tm.tmAveCharWidth*5/4, 0, text, len);
+      TextOut(hdc, tm.tmAveCharWidth*5/4, 0, text.c_str(), len);
     }
 
     // 枠描画
@@ -279,23 +305,32 @@ CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 template <typename Map>
 struct RegMap {
   using ValueType = typename Map::ValueType;
+  using DefaultValueType = typename Map::DefaultValueType;
   LPCTSTR name;
   Map typeMap;
-  ValueType defaultValue;
+  DefaultValueType defaultValue;
 };
 
 template <typename Enum, std::size_t Num>
 struct RegEnumMap {
   using ValueType = Enum;
+  using DefaultValueType = Enum;
   std::array<std::pair<LPCTSTR, Enum>, Num> enumMap;
 };
 
 struct RegBoolMap {
   using ValueType = bool;
+  using DefaultValueType = bool;
 };
 
 struct RegLongMap {
   using ValueType = LONG;
+  using DefaultValueType = LONG;
+};
+
+struct RegStringMap {
+  using ValueType = Win32::tstring;
+  using DefaultValueType = LPCTSTR;
 };
 
 struct PerOrientationSettingRegMap {
@@ -359,7 +394,10 @@ constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
   {TEXT("hAspectY"), {}, DEFAULT_SETTING.horizontalSetting.aspectY},
 };
 
-constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_SETTING.isEnabled};
+constexpr RegMap<RegBoolMap> isLockedRegMap = {TEXT("isLocked"), RegBoolMap{}, DEFAULT_SETTING.isLocked};
+constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
+constexpr RegMap<RegBoolMap> isCurrentProfileChangedRegMap = {TEXT("isCurrentProfileChanged"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged};
+constexpr RegMap<RegStringMap> currentProfileNameRegMap = {TEXT("currentProfileName"), RegStringMap{}, DEFAULT_GLOBAL_SETTING.currentProfileName};
 
 
 struct RegGetFailed : AM::RuntimeError<RegGetFailed> { };
@@ -388,6 +426,12 @@ Enum reg_get_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, Num>> &m
   throw RegGetFailed{};
 }
 
+inline Win32::tstring reg_get_(const Win32::Reg::Key &key, const RegMap<RegStringMap> &m) {
+  auto str = Win32::Reg::query_sz(key, m.name);
+  Log::debug(TEXT("reg_get: %S -> %S"), m.name, str.c_str());
+  return str;
+}
+
 template <class T>
 auto reg_get(const Win32::Reg::Key &key, const RegMap<T> &m) {
   try {
@@ -396,7 +440,7 @@ auto reg_get(const Win32::Reg::Key &key, const RegMap<T> &m) {
   catch (Win32::Reg::ErrorCode &ex) {
     if (ex.code == ERROR_FILE_NOT_FOUND) {
       Log::warning(TEXT("\"%S\" is not found - use default value"), m.name);
-      return m.defaultValue;
+      return typename T::ValueType{m.defaultValue};
     }
     Log::error(TEXT("cannot get \"%S\" value: %hs(%d)"), m.name, ex.what(), ex.code);
     throw RegGetFailed{};
@@ -428,6 +472,10 @@ inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, N
   Win32::Reg::set_sz(key, m.name, tag);
 }
 
+inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegStringMap> &m, const Win32::tstring &v) {
+  Win32::Reg::set_sz(key, m.name, v.c_str());
+}
+
 template <class T, class V>
 auto reg_put(const Win32::Reg::Key &key, const RegMap<T> &m, const V &v) {
   try {
@@ -439,12 +487,55 @@ auto reg_put(const Win32::Reg::Key &key, const RegMap<T> &m, const V &v) {
   }
 }
 
+inline Win32::tstring encode_profile_name(LPCTSTR src) {
+  Win32::tstring ret;
+
+  for (; *src; src++) {
+    switch (*src) {
+    case TEXT(':'):
+      ret += TEXT("%3A");
+      break;
+    case TEXT('/'):
+      ret += TEXT("%2F");
+      break;
+    case TEXT('\\'):
+      ret += TEXT("%5C");
+      break;
+    case TEXT('%'):
+      ret += TEXT("%25");
+      break;
+    default:
+      ret += *src;
+    }
+  }
+  return ret;
+}
+
+inline Win32::tstring decode_profile_name(LPCTSTR src) {
+  Win32::tstring ret;
+
+  for (; *src; src++) {
+    if (src[0] == TEXT('%') && _istxdigit(src[1]) && _istxdigit(src[2])) {
+      TCHAR buf[3] = { src[1], src[2], L'\0' };
+      TCHAR *next;
+      ret += static_cast<TCHAR>(_tcstol(buf, &next, 16));
+      src += 2;
+    } else
+      ret += *src;
+  }
+  return ret;
+}
+
 inline Win32::tstring make_regpath(LPCTSTR profileName) {
   Win32::tstring tmp{REG_PROJECT_ROOT_PATH};
 
   if (profileName) {
     tmp += TEXT("\\");
-    tmp += profileName;
+    tmp += REG_PROFILES_SUBKEY;
+    if (*profileName) {
+      tmp += TEXT("\\");
+      tmp += encode_profile_name(profileName);
+    }
   }
   return tmp;
 }
@@ -484,7 +575,7 @@ static Setting load_setting(LPCTSTR profileName) {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
       return Setting{
-        reg_get(key, isEnabledRegMap),
+        reg_get(key, isLockedRegMap),
         reg_get_per_orientation_setting(key, verticalSettingRegMap),
         reg_get_per_orientation_setting(key, horizontalSettingRegMap),
       };
@@ -503,9 +594,9 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   auto path = make_regpath(profileName);
 
   try {
-    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, isEnabledRegMap, s.isEnabled);
+      reg_put(key, isLockedRegMap, s.isLocked);
       reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
       reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
     }
@@ -516,6 +607,93 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
     Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
   }
 }
+
+static GlobalSetting load_global_setting() {
+  auto path = make_regpath(nullptr);
+  auto isEnabled = DEFAULT_GLOBAL_SETTING.isEnabled;
+  auto isCurrentProfileChanged = DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged;
+  Win32::tstring currentProfileName = DEFAULT_GLOBAL_SETTING.currentProfileName;
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    try {
+      isEnabled = reg_get(key, isEnabledRegMap);
+      isCurrentProfileChanged = reg_get(key, isCurrentProfileChangedRegMap);
+      currentProfileName = reg_get(key, currentProfileNameRegMap);
+    }
+    catch (RegGetFailed &) {
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+  return GlobalSetting{isEnabled, isCurrentProfileChanged, currentProfileName, load_setting(nullptr)};
+}
+
+static void save_global_setting(const GlobalSetting &s) {
+  auto path = make_regpath(nullptr);
+
+  try {
+    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    try {
+      reg_put(key, isEnabledRegMap, s.isEnabled);
+      reg_put(key, isCurrentProfileChangedRegMap, s.isCurrentProfileChanged);
+      reg_put(key, currentProfileNameRegMap, s.currentProfileName);
+    }
+    catch (RegPutFailed &) {
+    }
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+  save_setting(nullptr, s.currentProfile);
+}
+
+static std::vector<Win32::tstring> enum_profile() {
+  std::vector<Win32::tstring> ret;
+
+  Win32::tstring path{REG_PROJECT_ROOT_PATH};
+  path += TEXT("\\");
+  path += REG_PROFILES_SUBKEY;
+  try {
+    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    Win32::Reg::enum_key(key, [&ret](Win32::tstring name) { ret.emplace_back(decode_profile_name(name.c_str())); });
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot enum registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+  }
+
+  return ret;
+}
+
+// newName は存在していてはいけない。
+static Win32::tstring rename_profile(LPCTSTR oldName, LPCTSTR newName) {
+  auto path = make_regpath(TEXT(""));
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    Win32::Reg::rename_key(key, encode_profile_name(oldName).c_str(), encode_profile_name(newName).c_str());
+    return newName;
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot rename \"%S\" to \"%S\": %hs(reason=%d)"), oldName, newName, ex.what(), ex.code);
+    return TEXT("");
+  }
+}
+
+static void delete_profile(LPCTSTR name) {
+  auto path = make_regpath(TEXT(""));
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    Win32::Reg::delete_tree(key, encode_profile_name(name).c_str());
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot delete \"%S\": %hs(reason=%d, path=\"%S\")"), name, ex.what(), ex.code, path.c_str());
+  }
+}
+
+
+//
+// UI
+//
 
 inline NOTIFYICONDATA make_notify_icon_data(HWND hWnd, UINT uID) {
   auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
@@ -543,46 +721,24 @@ static void delete_tasktray_icon(HWND hWnd) {
 static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
   POINT point;
   TPMPARAMS tpmp, *pTpmp = nullptr;
-  HMENU hMenu, hTasktrayMenu;
 
-    if (isTray) {
-      RECT rect = { 0, 0, 0, 0 };
-      HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
-      if (hwndShell) {
-        GetWindowRect(hwndShell, &rect);
-        tpmp = Win32::make_sized_pod<TPMPARAMS>();
-        tpmp.rcExclude = rect;
-        pTpmp = &tpmp;
-      }
+  if (isTray) {
+    RECT rect = { 0, 0, 0, 0 };
+    HWND hwndShell = FindWindow(TEXT("Shell_TrayWnd"), nullptr);
+    if (hwndShell) {
+      GetWindowRect(hwndShell, &rect);
+      tpmp = Win32::make_sized_pod<TPMPARAMS>();
+      tpmp.rcExclude = rect;
+      pTpmp = &tpmp;
     }
-
-    GetCursorPos(&point);
-    SetForegroundWindow(hWnd);
-
-    hMenu = LoadMenu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
-    hTasktrayMenu = GetSubMenu(hMenu, 0);
-    TrackPopupMenuEx(hTasktrayMenu,
-                     TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y,
-                     hWnd, pTpmp);
-    DestroyMenu(hMenu);
-}
-
-using FindWindowResult = std::tuple<HWND, LPCTSTR, LPCTSTR>;
-static BOOL CALLBACK find_window_callback(HWND hWnd, LPARAM lParam) {
-  auto &[rhWnd, cls, name] = *reinterpret_cast<FindWindowResult *>(lParam);
-  TCHAR tmp[128];
-  if ((!cls || (GetClassName(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, cls))) &&
-      (!name || (GetWindowText(hWnd, tmp, std::size(tmp)) && !_tcscmp(tmp, name)))) {
-    rhWnd = hWnd;
-    return FALSE;
   }
-  return TRUE;
-}
 
-static HWND find_window(LPCTSTR cls, LPCTSTR name) {
-  FindWindowResult ret{nullptr, cls, name};
-  EnumWindows(&find_window_callback, reinterpret_cast<LPARAM>(&ret));
-  return std::get<HWND>(ret);
+  GetCursorPos(&point);
+  SetForegroundWindow(hWnd);
+
+  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
+  auto submenu = Win32::get_sub_menu(menu, 0);
+  TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, hWnd, pTpmp);
 }
 
 static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
@@ -623,8 +779,8 @@ static void update_monitors() {
   monitors = std::move(ret);
 }
 
-static HMENU create_monitors_menu(int idbase) {
-  HMENU hMenu = CreatePopupMenu();
+static Win32::Menu create_monitors_menu(int idbase) {
+  auto menu = Win32::create_popup_menu();
   int id = idbase;
   int index = -1;
 
@@ -632,23 +788,19 @@ static HMENU create_monitors_menu(int idbase) {
     TCHAR tmp[1024];
     _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
               index++, whole.left, whole.top, whole.right, whole.bottom, name.c_str());
-    AppendMenu(hMenu, MF_STRING, id++, tmp);
+    AppendMenu(menu.get(), MF_STRING, id++, tmp);
   }
 
-  return hMenu;
+  return menu;
 }
 
-static void popup_monitors_menu(HWND hWnd, int id, HMENU &hMenu, int idbase) {
-  if (hMenu) {
-    DestroyMenu(hMenu);
-    hMenu = nullptr;
-  }
-  hMenu = create_monitors_menu(idbase);
+template <typename MenuType>
+void show_button_menu(HWND hWnd, const MenuType &menu) {
   auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   RECT rect{0, 0, 0, 0};
-  GetWindowRect(GetDlgItem(hWnd, id), &rect);
+  GetWindowRect(hWnd, &rect);
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, hWnd, &tpmp);
+  TrackPopupMenuEx(menu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, GetParent(hWnd), &tpmp);
 }
 
 static const Monitor *get_current_monitor(int monitorNumber) {
@@ -661,7 +813,7 @@ static const Monitor *get_current_monitor(int monitorNumber) {
 }
 
 static TargetStatus get_target_information() {
-  if (auto hWndTarget = find_window(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
+  if (auto hWndTarget = FindWindow(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); hWndTarget) {
     auto wi = Win32::make_sized_pod<WINDOWINFO>();
     if (GetWindowInfo(hWndTarget, &wi))
       return {hWndTarget, wi.rcWindow, wi.rcClient};
@@ -676,7 +828,8 @@ struct AdjustTargetResult {
 
 static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) {
   static TargetStatus lastTargetStatus;
-  auto const &setting = s_currentSetting;
+  auto const &setting = s_currentGlobalSetting;
+  auto const &profile = setting.currentProfile;
 
   // ターゲット情報の更新
   TargetStatus ts = get_target_information();
@@ -699,7 +852,7 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerOrientationSetting &s = cW > cH ? setting.horizontalSetting : setting.verticalSetting;
+    const PerOrientationSetting &s = cW > cH ? profile.horizontalSetting : profile.verticalSetting;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
     if (!pMonitor) {
@@ -808,6 +961,180 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
   return {true, lastTargetStatus};
 }
 
+//
+// メッセージボックスをいい感じに配置する
+//
+void adjust_popup(HWND hWndOwner, HWND hWndTarget) {
+    // メインウィンドウの真ん中に配置する
+    RECT rcOwner, rcTarget;
+    GetWindowRect(hWndOwner, &rcOwner);
+    GetWindowRect(hWndTarget, &rcTarget);
+    auto w = Win32::width(rcTarget);
+    auto h = Win32::height(rcTarget);
+    auto x = rcOwner.left + (Win32::width(rcOwner) - w)/2;
+    auto y = rcOwner.top + (Win32::height(rcOwner) - h)/2;
+
+    // 画面外にはみ出さないようにする
+    auto hm = MonitorFromWindow(hWndOwner, MONITOR_DEFAULTTONULL);
+    if (hm) {
+      auto mi = Win32::make_sized_pod<MONITORINFOEX>();
+      GetMonitorInfo(hm, &mi);
+      x = std::max(x, mi.rcWork.left);
+      y = std::max(y, mi.rcWork.top);
+      auto r = std::min(x + w, mi.rcWork.right);
+      auto b = std::min(y + h, mi.rcWork.bottom);
+      x = r - w;
+      y = b - h;
+    }
+
+    SetWindowPos(hWndTarget, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+int open_message_box(HWND hWndOwner, LPCTSTR text, LPCTSTR caption, UINT type) {
+  static HWND s_hWndOwner = nullptr;
+  static HHOOK s_hHook = nullptr;
+
+  s_hWndOwner = hWndOwner;
+  s_hHook = SetWindowsHookEx(WH_CBT,
+                             [](int code, WPARAM wParam, LPARAM lParam) {
+                               HHOOK hHook = s_hHook;
+                               if (code == HCBT_ACTIVATE) {
+                                 UnhookWindowsHookEx(hHook);
+                                 s_hHook = nullptr;
+                                 adjust_popup(s_hWndOwner, reinterpret_cast<HWND>(wParam));
+                               }
+                               return CallNextHookEx(hHook, code, wParam, lParam);
+                             },
+                             hInstance, GetCurrentThreadId());
+  auto ret = MessageBox(hWndOwner, text, caption, type);
+  s_hWndOwner = nullptr;
+  s_hHook = nullptr;
+  return ret;
+}
+
+//
+// 名前を付けて保存する or リネーム
+//
+
+static bool fill_profile_to_combobox(HWND hWnd) {
+  ComboBox_ResetContent(hWnd);
+
+  auto ps = enum_profile();
+  for (auto const &name : ps) {
+    ComboBox_AddString(hWnd, name.c_str());
+  }
+
+  return !ps.empty();
+}
+
+struct SaveDialogBox {
+  enum Kind { Save, Rename };
+private:
+  Win32::tstring m_profileName{};
+  HWND m_hWndOwner;
+  Kind m_kind;
+  SaveDialogBox(HWND hWndOwner, Kind kind) : m_hWndOwner{hWndOwner}, m_kind{kind} { }
+  //
+  static INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_INITDIALOG) {
+      SetWindowLongPtr(hWnd, DWLP_USER, lParam);
+    }
+    auto self = reinterpret_cast<SaveDialogBox *>(GetWindowLongPtr(hWnd, DWLP_USER));
+    return self ? self->dialog_proc(hWnd, msg, wParam, lParam) : FALSE;
+  }
+
+  INT_PTR dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+      fill_profile_to_combobox(GetDlgItem(hWnd, IDC_SELECT_PROFILE));
+      EnableWindow(GetDlgItem(hWnd, IDOK), false);
+      SetWindowText(hWnd, Win32::load_string(hInstance, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE).c_str());
+      WCHAR buf[256];
+      auto detail = Win32::load_string(hInstance, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
+      _stprintf(buf, detail.c_str(), s_currentGlobalSetting.currentProfileName.c_str());
+      SetWindowText(GetDlgItem(hWnd, IDC_SAVE_DETAIL), buf);
+      adjust_popup(m_hWndOwner, hWnd);
+      return TRUE;
+    }
+
+    case WM_COMMAND: {
+      UINT id = LOWORD(wParam);
+
+      switch (id) {
+      case IDOK: {
+        auto n = Win32::get_window_text(GetDlgItem(hWnd, IDC_SELECT_PROFILE));
+        if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
+          TCHAR tmp[256];
+          _stprintf(tmp, Win32::load_string(hInstance, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
+          auto r = open_message_box(hWnd, tmp, Win32::load_string(hInstance, IDS_CONFIRM).c_str(), MB_OKCANCEL);
+          if (r != IDOK)
+            return TRUE;
+        }
+        m_profileName = std::move(n);
+        EndDialog(hWnd, IDOK);
+        return TRUE;
+      }
+
+      case IDCANCEL:
+        EndDialog(hWnd, IDCANCEL);
+        return TRUE;
+
+      case IDC_SELECT_PROFILE:
+        switch (HIWORD(wParam)) {
+        case CBN_SELCHANGE:
+          EnableWindow(GetDlgItem(hWnd, IDOK), true);
+          return TRUE;
+        case CBN_EDITCHANGE: {
+          auto n = Win32::get_window_text(reinterpret_cast<HWND>(lParam));
+          EnableWindow(GetDlgItem(hWnd, IDOK), GetWindowTextLength(reinterpret_cast<HWND>(lParam)) != 0);
+          return TRUE;
+        }
+        default:
+          return FALSE;
+        }
+      }
+      return FALSE;
+    }
+    }
+
+    return FALSE;
+  }
+  SaveDialogBox() { }
+public:
+  static std::pair<int, Win32::tstring> open(HWND hWnd, Kind kind) {
+    SaveDialogBox sdb{hWnd, kind};
+    auto r = DialogBoxParam(hInstance, MAKEINTRESOURCE(IDD_SAVE), hWnd, &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
+    switch (r) {
+    case IDOK:
+      return std::make_pair(IDOK, sdb.m_profileName);
+    case IDCANCEL:
+      return std::make_pair(IDCANCEL, Win32::tstring{});
+    case -1:
+      throw Win32::Win32ErrorCode{-1};
+    case 0:
+      throw AM::IllegalArgument{"invalid hWnd"};
+    }
+    throw AM::IllegalArgument{"unknown result of DialogBox"};
+  }
+};
+
+
+//
+// main dialog
+//
+using HandlerResult = std::pair<bool, INT_PTR>;
+using Handler = std::function<HandlerResult (HWND, UINT, WPARAM, LPARAM)>;
+using HandlerMap = std::unordered_map<int, Handler>;
+
+static bool isDialogChanged = false;
+static HandlerMap s_handlerMap;
+
+template <typename Enum, std::size_t Num>
+void register_handler_map(HandlerMap &hm, const RadioButtonMap<Enum, Num> &m, Handler h) {
+  for (auto const &[tag, id] : m)
+    hm.emplace(id, h);
+}
+
 template <typename Enum, std::size_t Num>
 static void set_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m, Enum v) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
@@ -818,14 +1145,9 @@ static void set_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m, Enu
       Button_SetCheck(get(id), BST_UNCHECKED);
 }
 
-template <typename Enum, std::size_t Num>
-static Enum get_radio_buttons(HWND hWnd, const RadioButtonMap<Enum, Num> &m) {
-  auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
-  for (auto const &[tag, id] : m) {
-    if (Button_GetCheck(get(id)) == BST_CHECKED)
-      return tag;
-  }
-  return m[0].first;
+template <typename Enum>
+void register_handler_map(HandlerMap &hm, const CheckButtonMap<Enum> &m, Handler h) {
+  hm.emplace(m.id, h);
 }
 
 template <typename Enum>
@@ -833,9 +1155,21 @@ static void set_check_button(HWND hWnd, const CheckButtonMap<Enum> &m, Enum v) {
   Button_SetCheck(GetDlgItem(hWnd, m.id), m.checked == v ? BST_CHECKED : BST_UNCHECKED);
 }
 
-template <typename Enum>
-static Enum get_check_button(HWND hWnd, const CheckButtonMap<Enum> &m) {
-  return Button_GetCheck(GetDlgItem(hWnd, m.id)) == BST_CHECKED ? m.checked : m.unchecked;
+void register_handler_map(HandlerMap &hm, int id, Handler h) {
+  hm.emplace(id, h);
+}
+
+void register_handler_map(HandlerMap &hm, int id, std::function<HandlerResult (HWND)> h) {
+  register_handler_map(hm, id, [h](HWND hWnd, UINT, WPARAM, LPARAM) { return h(hWnd); });
+}
+
+void register_handler_map(HandlerMap &hm, int id, std::function<HandlerResult (HWND, HWND, int, int)> h) {
+  register_handler_map(hm, id, [h](HWND hWndDialog, UINT msg, WPARAM wParam, LPARAM lParam) {
+                                 auto id = LOWORD(wParam);
+                                 auto notify = HIWORD(wParam);
+                                 auto hWndControl = reinterpret_cast<HWND>(lParam);
+                                 return h(hWndDialog, hWndControl, id, notify);
+                               });
 }
 
 static void set_monitor_number(HWND hWnd, int id, int num) {
@@ -844,14 +1178,91 @@ static void set_monitor_number(HWND hWnd, int id, int num) {
   SetWindowText(GetDlgItem(hWnd, id), buf);
 }
 
-static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, const PerOrientationSetting &setting) {
+static Handler make_long_integer_box_handler(LONG &stor) {
+  return [&stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case EN_CHANGE: {
+             int id = LOWORD(wParam);
+             TCHAR buf[256];
+             GetWindowText(reinterpret_cast<HWND>(lParam), buf, std::size(buf));
+             LONG val = _tcstol(buf, nullptr, 10);
+             if (val != stor) {
+               Log::debug(TEXT("text box %X changed: %d -> %d"), id, stor, val);
+               stor = val;
+               s_currentGlobalSetting.isCurrentProfileChanged = true;
+               isDialogChanged = true;
+             }
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename Enum>
+Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor) {
+  return [&m, &stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             int id = LOWORD(wParam);
+             auto val = Button_GetCheck(reinterpret_cast<HWND>(lParam)) == BST_CHECKED ? m.checked : m.unchecked;
+             if (val != stor) {
+               Log::debug(TEXT("check box %X changed: %d -> %d"), id, static_cast<int>(stor) , static_cast<int>(val));
+               stor = val;
+               s_currentGlobalSetting.isCurrentProfileChanged = true;
+               isDialogChanged = true;
+             }
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename Enum, std::size_t Num>
+Handler make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
+  return [&m, &stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             int cid = LOWORD(wParam);
+             for (auto const &[tag, id] : m) {
+               if (id == cid && tag != stor) {
+                 Log::debug(TEXT("radio button %X changed: %d -> %d"), cid, static_cast<int>(stor), static_cast<int>(tag));
+                 stor = tag;
+                 s_currentGlobalSetting.isCurrentProfileChanged = true;
+                 isDialogChanged = true;
+                 return HandlerResult{true, TRUE};
+               }
+             }
+             Log::warning(TEXT("BN_CLICKED to the unknown radio button %X is received"), cid);
+             return HandlerResult{true, FALSE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+template <typename MenuFactory>
+Handler make_menu_button_handler(int id, MenuFactory f) {
+  return [id, f](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+           switch (HIWORD(wParam)) {
+           case BN_CLICKED: {
+             [[maybe_unused]] auto [housekeeper, menu] = f();
+             show_button_menu(reinterpret_cast<HWND>(lParam), menu);
+             return HandlerResult{true, TRUE};
+           }
+           }
+           return HandlerResult{true, FALSE};
+         };
+}
+
+static void update_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
   auto setint = [get](auto id, int v) {
                   TCHAR buf[256];
                   _stprintf(buf, TEXT("%d"), v);
                   SetWindowText(get(id), buf);
                 };
-
   setint(ids.monitorNumber, setting.monitorNumber);
   set_check_button(hWnd, ids.isConsiderTaskbar, setting.isConsiderTaskbar);
   set_radio_buttons(hWnd, ids.windowArea, setting.windowArea);
@@ -862,35 +1273,290 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
   setint(ids.offsetY, setting.offsetY);
 }
 
-static void get_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
+static void init_per_orientation_settings(HWND hWnd, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
+
+  register_handler_map(s_handlerMap, ids.monitorNumber, make_long_integer_box_handler(setting.monitorNumber));
+  register_handler_map(s_handlerMap, ids.isConsiderTaskbar, make_check_button_handler(ids.isConsiderTaskbar, setting.isConsiderTaskbar));
+  register_handler_map(s_handlerMap, ids.windowArea, make_radio_button_map(ids.windowArea, setting.windowArea));
+  register_handler_map(s_handlerMap, ids.size, make_long_integer_box_handler(setting.size));
+  register_handler_map(s_handlerMap, ids.axis, make_radio_button_map(ids.axis, setting.axis));
+  register_handler_map(s_handlerMap, ids.origin, make_radio_button_map(ids.origin, setting.origin));
+  register_handler_map(s_handlerMap, ids.offsetX, make_long_integer_box_handler(setting.offsetX));
+  register_handler_map(s_handlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
+  register_handler_map(s_handlerMap, ids.selectMonitor.id,
+                       make_menu_button_handler(ids.selectMonitor.id,
+                                                [ids]() {
+                                                  Log::debug(TEXT("selectMonitor received"));
+                                                  return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
+                                                }));
+}
+
+static void set_profile_text(HWND hWnd) {
+  Win32::tstring buf;
+
+  if (s_currentGlobalSetting.currentProfileName.empty())
+    buf = Win32::load_string(hInstance, IDS_NEW_PROFILE);
+  else
+    buf = s_currentGlobalSetting.currentProfileName;
+
+  if (s_currentGlobalSetting.isCurrentProfileChanged)
+    buf += Win32::load_string(hInstance, IDS_CHANGED_MARK);
+
+  SetWindowText(GetDlgItem(hWnd, IDC_SELECT_PROFILE), buf.c_str());
+}
+
+static void update_profile(HWND hWnd) {
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
+  auto isEnabled = fill_profile_to_combobox(hWndItem);
+
+  EnableWindow(hWndItem, isEnabled);
+  set_profile_text(hWnd);
+}
+
+static int save_as(HWND hWnd) {
+  auto &s = s_currentGlobalSetting;
+  auto [ret, profileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Save);
+  if (ret == IDCANCEL) {
+    Log::debug(TEXT("save as: canceled"));
+    return IDCANCEL;
+  }
+  s.currentProfileName = profileName;
+  save_setting(s.currentProfileName.c_str(), s.currentProfile);
+  s.isCurrentProfileChanged = false;
+  return IDOK;
+}
+
+static int save(HWND hWnd) {
+  auto &s = s_currentGlobalSetting;
+  Log::debug(TEXT("IDC_SAVE received"));
+
+  if (s.currentProfileName.empty())
+    return save_as(hWnd);
+
+  if (!s.isCurrentProfileChanged) {
+    Log::debug(TEXT("unnecessary to save"));
+    return IDOK;
+  }
+  save_setting(s.currentProfileName.c_str(), s.currentProfile);
+  s.isCurrentProfileChanged = false;
+  return IDOK;
+}
+
+static int confirm_save(HWND hWnd) {
+  if (!s_currentGlobalSetting.isCurrentProfileChanged) {
+    Log::debug(TEXT("unnecessary to save"));
+    return IDOK;
+  }
+  auto ret = open_message_box(hWnd,
+                              Win32::load_string(hInstance, IDS_CONFIRM_SAVE).c_str(),
+                              Win32::load_string(hInstance, IDS_CONFIRM).c_str(),
+                              MB_YESNOCANCEL);
+  switch (ret) {
+  case IDYES:
+    return save(hWnd);
+  case IDNO:
+    return IDOK;
+  }
+  return IDCANCEL;
+}
+
+static void init_profile(HWND hWnd) {
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
+
+  // エディットボックス部分を編集不可にする
+  // EnableWindow だとなぜかプルダウンメニューが出なくなってしまうのでダメ
+  auto cbi = Win32::make_sized_pod<COMBOBOXINFO>();
+  GetComboBoxInfo(hWndItem, &cbi);
+  Edit_SetReadOnly(cbi.hwndItem, true);
+
+  register_handler_map(s_handlerMap, IDC_SELECT_PROFILE,
+                       [](HWND hWnd, HWND hWndControl, int, int notify) {
+                         switch (notify) {
+                         case CBN_SELCHANGE:
+                           PostMessage(hWnd, WM_CHANGE_PROFILE, 0, reinterpret_cast<LPARAM>(hWndControl));
+                           return HandlerResult{true, TRUE};
+                         case CBN_SETFOCUS:
+                           //テキストがセレクトされるのがうっとうしいのでクリアする
+                           PostMessage(hWndControl, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+                           return HandlerResult{true, TRUE};
+                         }
+                         return HandlerResult{true, FALSE};
+                       });
+}
+
+template <typename Enum, std::size_t Num>
+static void update_radio_button_lock_status(HWND hWnd, const RadioButtonMap<Enum, Num> &m, bool isLocked) {
+  for ([[maybe_unused]] auto const &[tag, id] : m) {
+    EnableWindow(GetDlgItem(hWnd, id), !isLocked);
+  }
+}
+
+static void update_per_orientation_lock_status(HWND hWnd, const PerOrientationSettingID &ids, bool isLocked) {
   auto get = [hWnd](auto id) { return GetDlgItem(hWnd, id); };
-  auto getint = [get](auto id) {
-                  TCHAR buf[256];
-                  GetWindowText(get(id), buf, std::size(buf));
-                  return _tcstol(buf, nullptr, 10);
-                };
-  setting.monitorNumber = getint(ids.monitorNumber);
-  setting.isConsiderTaskbar = get_check_button(hWnd, ids.isConsiderTaskbar);
-  setting.windowArea = get_radio_buttons(hWnd, ids.windowArea);
-  setting.size = getint(ids.size);
-  setting.axis = get_radio_buttons(hWnd, ids.axis);
-  setting.origin = get_radio_buttons(hWnd, ids.origin);
-  setting.offsetX = getint(ids.offsetX);
-  setting.offsetY = getint(ids.offsetY);
+  auto set = [isLocked, get](auto id) { EnableWindow(get(id), !isLocked); };
+  set(ids.monitorNumber);
+  set(ids.isConsiderTaskbar.id);
+  update_radio_button_lock_status(hWnd, ids.windowArea, isLocked);
+  set(ids.size);
+  update_radio_button_lock_status(hWnd, ids.axis, isLocked);
+  update_radio_button_lock_status(hWnd, ids.origin, isLocked);
+  set(ids.offsetX);
+  set(ids.offsetY);
+}
+
+static void update_lock_status(HWND hWnd) {
+  auto isLocked = s_currentGlobalSetting.currentProfile.isLocked;
+  update_per_orientation_lock_status(hWnd, verticalSettingID, isLocked);
+  update_per_orientation_lock_status(hWnd, horizontalSettingID, isLocked);
+}
+
+static void update_main_controlls(HWND hWnd) {
+  auto &setting = s_currentGlobalSetting;
+  set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
+  update_profile(hWnd);
+  update_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
+  update_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
+  update_lock_status(hWnd);
+}
+
+static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu() {
+  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_PROFILE));
+  auto submenu = Win32::get_sub_menu(menu, 0);
+  auto const &s = s_currentGlobalSetting;
+
+  // IDC_LOCK のチェック状態を変更する
+  auto mii = Win32::make_sized_pod<MENUITEMINFO>();
+  mii.fMask = MIIM_STATE;
+  mii.fState = s.currentProfile.isLocked ? MFS_CHECKED : 0;
+  SetMenuItemInfo(submenu.get(), IDC_LOCK, false, &mii);
+
+  // 無名プロファイルでは IDC_RENAME と IDC_DELETE を無効にする
+  mii.fMask = MIIM_STATE;
+  mii.fState = s.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
+  SetMenuItemInfo(submenu.get(), IDC_RENAME, false, &mii);
+  SetMenuItemInfo(submenu.get(), IDC_DELETE, false, &mii);
+
+  // 名前付きかつ無変更ならば IDC_SAVE を無効にする
+  mii.fMask = MIIM_STATE;
+  mii.fState = !s.currentProfileName.empty() && !s.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+  SetMenuItemInfo(submenu.get(), IDC_SAVE, false, &mii);
+
+  // 無名かつ無変更ならば IDC_NEW を無効にする
+  mii.fMask = MIIM_STATE;
+  mii.fState = s.currentProfileName.empty() && !s.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+  SetMenuItemInfo(submenu.get(), IDC_NEW, false, &mii);
+
+  return std::make_pair(std::move(menu), std::move(submenu));
 }
 
 static void init_main_controlls(HWND hWnd) {
-  auto const &setting = s_currentSetting;
-  set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
-  init_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
-  init_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
-}
+  auto &setting = s_currentGlobalSetting;
+  {
+    static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
+    register_handler_map(s_handlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled));
+  }
 
-static void on_update_dialog_items(HWND hWnd) {
-  auto &setting = s_currentSetting;
-  setting.isEnabled = get_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED));
-  get_per_orientation_settings(hWnd, verticalSettingID, setting.verticalSetting);
-  get_per_orientation_settings(hWnd, horizontalSettingID, setting.horizontalSetting);
+  init_profile(hWnd);
+  init_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
+  init_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
+
+  register_handler_map(s_handlerMap, IDC_OPEN_PROFILE_MENU,
+                       make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
+                                                []() {
+                                                  Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
+                                                  return create_profile_menu();
+                                                }));
+  register_handler_map(s_handlerMap, IDC_LOCK,
+                       [](HWND hWnd, UINT, WPARAM, LPARAM) {
+                         Log::debug(TEXT("IDC_LOCK received"));
+                         s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
+                         s_currentGlobalSetting.isCurrentProfileChanged = true;
+                         isDialogChanged = true;
+                         return HandlerResult{true, TRUE};
+                       });
+  register_handler_map(s_handlerMap, IDC_SAVE,
+                       [](HWND hWnd) {
+                         save(hWnd);
+                         update_profile(hWnd);
+                         return HandlerResult{true, TRUE};
+                       });
+  register_handler_map(s_handlerMap, IDC_SAVE_AS,
+                       [](HWND hWnd) {
+                         save_as(hWnd);
+                         update_profile(hWnd);
+                         return HandlerResult{true, TRUE};
+                       });
+  register_handler_map(s_handlerMap, IDC_RENAME,
+                       [](HWND hWnd) {
+                         auto &s = s_currentGlobalSetting;
+                         auto [ret, newProfileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Rename);
+                         if (ret == IDCANCEL) {
+                           Log::debug(TEXT("rename: canceled"));
+                           return HandlerResult{true, TRUE};
+                         }
+                         delete_profile(newProfileName.c_str());
+                         rename_profile(s.currentProfileName.c_str(), newProfileName.c_str());
+                         s.currentProfileName = newProfileName;
+                         update_profile(hWnd);
+                         return HandlerResult{true, TRUE};
+                       });
+  register_handler_map(s_handlerMap, IDC_DELETE,
+                       [](HWND hWnd) {
+                         auto &s = s_currentGlobalSetting;
+                         if (s.currentProfileName.empty())
+                           return HandlerResult{true, TRUE};
+                         TCHAR tmp[256];
+                         _stprintf(tmp, Win32::load_string(hInstance, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
+                         auto ret = open_message_box(hWnd,
+                                                     tmp,
+                                                     Win32::load_string(hInstance, IDS_CONFIRM_DELETE_TITLE).c_str(),
+                                                     MB_OKCANCEL);
+                         switch (ret) {
+                         case IDCANCEL:
+                           return HandlerResult{true, TRUE};
+                         }
+                         delete_profile(s.currentProfileName.c_str());
+                         s.currentProfileName = TEXT("");
+                         isDialogChanged = true;
+                         update_main_controlls(hWnd);
+                         return HandlerResult{true, TRUE};
+                       });
+
+  register_handler_map(s_handlerMap, IDC_NEW,
+                       [](HWND hWnd) {
+                         auto &s = s_currentGlobalSetting;
+                         if (s.currentProfileName.empty() && !s.isCurrentProfileChanged) {
+                           Log::debug(TEXT("unnecessary to do"));
+                           return HandlerResult{true, TRUE};
+                         }
+                         auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
+                         auto ret = open_message_box(hWnd,
+                                                     Win32::load_string(hInstance, IDS_CONFIRM_INIT).c_str(),
+                                                     Win32::load_string(hInstance, IDS_CONFIRM_INIT_TITLE).c_str(),
+                                                     type);
+                         switch (ret) {
+                         case IDCANCEL:
+                           return HandlerResult{true, TRUE};
+                         case IDYES:
+                           break;
+                         case IDNO:
+                           if (s.isCurrentProfileChanged) {
+                             switch (confirm_save(hWnd)) {
+                             case IDCANCEL:
+                               return HandlerResult{true, TRUE};
+                             }
+                           }
+                           s.currentProfile = DEFAULT_SETTING;
+                           s.isCurrentProfileChanged = false;
+                           break;
+                         }
+                         s.currentProfileName = TEXT("");
+                         isDialogChanged = true;
+                         update_main_controlls(hWnd);
+                         return HandlerResult{true, TRUE};
+                       });
+
+  update_main_controlls(hWnd);
 }
 
 static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
@@ -902,16 +1568,14 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
     auto cH = Win32::height(ts.clientRect);
     auto wW = Win32::width(ts.windowRect);
     auto wH = Win32::height(ts.windowRect);
-    TCHAR tmp2[100];
     isHorizontal = cW > cH;
     isVertical = !isHorizontal;
-    LoadString(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL, tmp2, std::size(tmp2));
     _stprintf(tmp,
               TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
               ts.windowRect.left, ts.windowRect.top, wW, wH,
               ts.clientRect.left, ts.clientRect.top, cW, cH,
-              tmp2);
+              Win32::load_string(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
   }
   SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
   s_verticalGroupBox.set_selected(isVertical);
@@ -919,7 +1583,6 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
 }
 
 static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  static bool isDialogChanged = false;
   switch (msg) {
   case WM_INITDIALOG: {
     // override wndproc for group boxes.
@@ -927,19 +1590,41 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     s_horizontalGroupBox.override_window_proc(GetDlgItem(hWnd, IDC_H_GROUPBOX));
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
-    TCHAR tmp[128];
-    LoadString(hInstance, IDS_QUIT, tmp, std::size(tmp));
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, tmp);
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(hInstance, IDS_QUIT).c_str());
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
-    s_currentSetting = load_setting(nullptr);
+    s_currentGlobalSetting = load_global_setting();
     init_main_controlls(hWnd);
+    register_handler_map(s_handlerMap, IDC_HIDE,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_HIDE received"));
+                           ShowWindow(hWnd, SW_HIDE);
+                           return HandlerResult{true, TRUE};
+                         });
+    register_handler_map(s_handlerMap, IDC_QUIT,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_QUIT received"));
+                           save_global_setting(s_currentGlobalSetting);
+                           delete_tasktray_icon(hWnd);
+                           KillTimer(hWnd, TIMER_ID);
+                           DestroyWindow(hWnd);
+                           return HandlerResult{true, TRUE};
+                         });
+    register_handler_map(s_handlerMap, IDC_SHOW,
+                         [](HWND hWnd) {
+                           Log::debug(TEXT("IDC_SHOW received"));
+                           ShowWindow(hWnd, SW_SHOW);
+                           SetForegroundWindow(hWnd);
+                           return HandlerResult{true, TRUE};
+                         });
     add_tasktray_icon(hWnd, appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     update_monitors();
+    if (auto r = adjust_target(hWnd, true); r.isChanged)
+      update_target_status_text(hWnd, r.targetStatus);
     return TRUE;
   }
 
@@ -979,41 +1664,14 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
   case WM_COMMAND: {
     UINT id = LOWORD(wParam);
-    if (id >= IDC_BEGIN && id <= IDC_END)
-      isDialogChanged = true;
-    switch (id) {
-    case IDC_HIDE:
-      ShowWindow(hWnd, SW_HIDE);
-      return TRUE;
-
-    case IDC_QUIT:
-      save_setting(nullptr, s_currentSetting);
-      delete_tasktray_icon(hWnd);
-      KillTimer(hWnd, TIMER_ID);
-      DestroyWindow(hWnd);
-      return TRUE;
-
-    case IDC_SHOW:
-      ShowWindow(hWnd, SW_SHOW);
-      SetForegroundWindow(hWnd);
-      return TRUE;
-
-    case IDC_V_SELECT_MONITORS:
-      popup_monitors_menu(hWnd, IDC_V_SELECT_MONITORS, hMenuVMonitors, IDM_V_MONITOR_BASE);
-      return TRUE;
-
-    case IDC_H_SELECT_MONITORS:
-      popup_monitors_menu(hWnd, IDC_H_SELECT_MONITORS, hMenuHMonitors, IDM_H_MONITOR_BASE);
-      return TRUE;
-
-    }
+    if (auto i = s_handlerMap.find(static_cast<int>(id)); i != s_handlerMap.end())
+      if (auto ret = i->second(hWnd, msg, wParam, lParam); ret.first)
+        return ret.second;
     if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
-      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
       return TRUE;
     }
     if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + monitors.size()) {
-      isDialogChanged = true;
       set_monitor_number(hWnd, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
       return TRUE;
     }
@@ -1025,10 +1683,11 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return TRUE;
 
   case WM_TIMER:
-    if (isDialogChanged)
-      on_update_dialog_items(hWnd);
-    if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged)
+    if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged) {
       update_target_status_text(hWnd, r.targetStatus);
+      update_lock_status(hWnd);
+      set_profile_text(hWnd);
+    }
     isDialogChanged = false;
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
@@ -1041,6 +1700,29 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     // ダイアログのフォントを明示的に設定していると呼ばれる
     hFontMainDialog = reinterpret_cast<HFONT>(wParam);
     return TRUE;
+
+  case WM_CHANGE_PROFILE: {
+    auto hWndControl = reinterpret_cast<HWND>(lParam);
+    auto n = Win32::get_window_text(hWndControl);
+    set_profile_text(hWnd);
+    switch (confirm_save(hWnd)) {
+    case IDOK: {
+      Log::debug(TEXT("selected: %S"), n.c_str());
+      s_currentGlobalSetting.currentProfileName = n;
+      s_currentGlobalSetting.currentProfile = load_setting(n.c_str());
+      s_currentGlobalSetting.isCurrentProfileChanged = false;
+      break;
+    }
+    case IDCANCEL:
+      Log::debug(TEXT("canceled"));
+      break;
+    }
+    isDialogChanged = true;
+    update_main_controlls(hWnd);
+    //テキストがセレクトされるのがうっとうしいのでクリアする
+    PostMessage(hWndControl, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+    return TRUE;
+  }
 
   default:
     if (msg == msgTaskbarCreated) {
@@ -1070,7 +1752,7 @@ static void register_main_dialog_class(HINSTANCE hInst) {
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
   hInstance = hInst;
 
-  if (HWND hWnd = find_window(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); hWnd) {
+  if (HWND hWnd = FindWindow(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); hWnd) {
     PostMessage(hWnd, WM_COMMAND, IDC_SHOW, 0);
     return 0;
   }

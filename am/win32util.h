@@ -7,6 +7,51 @@ namespace AM::Win32 {
 using tstring = std::basic_string<TCHAR>;
 
 //
+// get null-terminated string from Win32 API and return it as tstring
+//
+template <class GetFunc>
+tstring get_sz(std::size_t len, GetFunc gf) {
+  tstring ret(len+1, TCHAR{});
+  if constexpr (std::is_invocable_v<decltype(gf), LPTSTR, std::size_t>) {
+    if constexpr (std::is_void_v<std::invoke_result_t<decltype(gf), LPTSTR, std::size_t>>) {
+      gf(ret.data(), len);
+      ret.resize(len);
+    } else {
+      auto actuallen = gf(ret.data(), len);
+      ret.resize(actuallen);
+    }
+  } else {
+    if constexpr (std::is_void_v<std::invoke_result_t<decltype(gf), LPTSTR>>) {
+      gf(ret.data());
+      ret.resize(len);
+    } else {
+      auto actuallen = gf(ret.data());
+      ret.resize(actuallen);
+    }
+  }
+  return ret;
+}
+
+template <class GetFunc>
+tstring get_sz(GetFunc gf) {
+  return get_sz(gf(nullptr, 0), gf);
+}
+
+inline tstring get_window_text(HWND hWnd) {
+  return Win32::get_sz(GetWindowTextLength(hWnd),
+                       [=](LPTSTR buf, std::size_t len) { GetWindowText(hWnd, buf, len+1); });
+}
+
+inline tstring load_string(HINSTANCE hInstance, UINT id) {
+  return Win32::get_sz([=]() {
+                         LPVOID *ptr;
+                         return LoadString(hInstance, id, reinterpret_cast<LPTSTR>(&ptr), 0);
+                       }(),
+                       [=](LPTSTR buf, std::size_t len) { LoadString(hInstance, id, buf, len+1); });
+}
+
+
+//
 // make POD struct having cbSize field
 //
 template <class T>
@@ -76,6 +121,46 @@ inline Icon load_icon_image(HINSTANCE hInst, LPCTSTR name, int cx, int cy, UINT 
   if ((fuLoad & LR_SHARED))
     throw IllegalArgument("load_icon_image cannot accept LR_SHARED");
   return Icon{reinterpret_cast<HICON>(LoadImage(hInst, name, IMAGE_ICON, cx, cy, fuLoad))};
+}
+
+//
+// menu
+//
+namespace Bits_ {
+
+struct HMenuDeleter {
+  using pointer = HMENU;
+  void operator () (pointer p) noexcept {
+    if (p)
+      DestroyMenu(p);
+  }
+};
+
+struct HBorrowedMenuDeleter {
+  using pointer = HMENU;
+  void operator () (pointer) noexcept {
+  }
+};
+
+using Menu = std::unique_ptr<HMENU, HMenuDeleter>;
+using BorrowedMenu = std::unique_ptr<HMENU, HBorrowedMenuDeleter>;
+
+} // namespace Bits_
+
+using Menu = Bits_::Menu;
+using BorrowedMenu = Bits_::BorrowedMenu;
+
+inline Menu create_popup_menu() {
+  return Menu{CreatePopupMenu()};
+}
+
+inline Menu load_menu(HINSTANCE hInstance, LPCTSTR lpMenu) {
+  return Menu{LoadMenu(hInstance, lpMenu)};
+}
+
+template <typename T>
+BorrowedMenu get_sub_menu(const T &m, int n) {
+  return BorrowedMenu{throw_if<Win32ErrorCode, HMENU, nullptr>(GetSubMenu(m.get(), n))};
 }
 
 //
