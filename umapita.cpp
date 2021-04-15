@@ -1773,9 +1773,12 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
   register_main_dialog_class(hInst);
   msgTaskbarCreated = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
-  HWND hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
+  auto hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
+  auto hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDA_UMAPITA));
   MSG msg;
   while (GetMessage(&msg, nullptr, 0, 0)) {
+    if (TranslateAccelerator(hWnd, hAccel, &msg))
+      continue;
     if (IsDialogMessage(hWnd, &msg))
       continue;
     TranslateMessage(&msg);

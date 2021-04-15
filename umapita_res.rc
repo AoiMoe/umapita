@@ -88,7 +88,7 @@ IDM_POPUP MENU
 {
   POPUP "Tasktray"
   {
-    MENUITEM "終了(&Q)",IDC_QUIT
+    MENUITEM "終了(&Q)\tCtrl+Q,Alt+F4",IDC_QUIT
   }
 }
 
@@ -96,16 +96,27 @@ IDM_PROFILE MENU
 {
   POPUP "Profile"
   {
-    MENUITEM "変更のロック(&L)",IDC_LOCK
+    MENUITEM "変更のロック(&L)\tCtrl+L",IDC_LOCK
     MENUITEM SEPARATOR
-    MENUITEM "保存(&S)",IDC_SAVE
-    MENUITEM "名前を付けて保存(&A)",IDC_SAVE_AS
+    MENUITEM "保存(&S)\tCtrl+S",IDC_SAVE
+    MENUITEM "名前を付けて保存(&A)\tCtrl+A",IDC_SAVE_AS
     MENUITEM SEPARATOR
-    MENUITEM "名前の変更(&R)",IDC_RENAME
-    MENUITEM "削除(&D)",IDC_DELETE
+    MENUITEM "名前の変更(&R)\tCtrl+R",IDC_RENAME
+    MENUITEM "削除(&D)\tCtrl+D",IDC_DELETE
     MENUITEM SEPARATOR
-    MENUITEM "新しいプロファイル(&N)",IDC_NEW
+    MENUITEM "新しいプロファイル(&N)\tCtrl+N",IDC_NEW
   }
+}
+
+IDA_UMAPITA ACCELERATORS {
+  VK_F4,IDC_QUIT,ALT,VIRTKEY
+  "^Q",IDC_QUIT
+  "^L",IDC_LOCK
+  "^S",IDC_SAVE
+  "^A",IDC_SAVE_AS
+  "^R",IDC_RENAME
+  "^D",IDC_DELETE
+  "^N",IDC_NEW
 }
 
 STRINGTABLE

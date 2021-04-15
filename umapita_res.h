@@ -84,4 +84,6 @@
 
 #define IDI_UMAPITA 0x500
 
+#define IDA_UMAPITA 0x600
+
 #define UMAPITA_MAIN_WINDOW_CLASS "umapita main"
