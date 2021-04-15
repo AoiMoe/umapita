@@ -1030,10 +1030,10 @@ static bool fill_profile_to_combobox(HWND hWnd) {
 struct SaveDialogBox {
   enum Kind { Save, Rename };
 private:
-  Win32::tstring m_profileName{};
   HWND m_hWndOwner;
   Kind m_kind;
-  SaveDialogBox(HWND hWndOwner, Kind kind) : m_hWndOwner{hWndOwner}, m_kind{kind} { }
+  Win32::tstring m_profileName;
+  SaveDialogBox(HWND hWndOwner, Kind kind, LPCTSTR oldname) : m_hWndOwner{hWndOwner}, m_kind{kind}, m_profileName(oldname) { }
   //
   static INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_INITDIALOG) {
@@ -1047,11 +1047,12 @@ private:
     switch (msg) {
     case WM_INITDIALOG: {
       fill_profile_to_combobox(GetDlgItem(hWnd, IDC_SELECT_PROFILE));
+      SetWindowText(GetDlgItem(hWnd, IDC_SELECT_PROFILE), m_profileName.c_str());
       EnableWindow(GetDlgItem(hWnd, IDOK), false);
       SetWindowText(hWnd, Win32::load_string(hInstance, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE).c_str());
       WCHAR buf[256];
       auto detail = Win32::load_string(hInstance, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
-      _stprintf(buf, detail.c_str(), s_currentGlobalSetting.currentProfileName.c_str());
+      _stprintf(buf, detail.c_str(), m_profileName.c_str());
       SetWindowText(GetDlgItem(hWnd, IDC_SAVE_DETAIL), buf);
       adjust_popup(m_hWndOwner, hWnd);
       return TRUE;
@@ -1062,7 +1063,9 @@ private:
 
       switch (id) {
       case IDOK: {
-        auto n = Win32::get_window_text(GetDlgItem(hWnd, IDC_SELECT_PROFILE));
+        auto n = Win32::remove_ws_on_both_ends(Win32::get_window_text(GetDlgItem(hWnd, IDC_SELECT_PROFILE)));
+        if (n.empty())
+          return TRUE;
         if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
           TCHAR tmp[256];
           _stprintf(tmp, Win32::load_string(hInstance, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
@@ -1085,8 +1088,8 @@ private:
           EnableWindow(GetDlgItem(hWnd, IDOK), true);
           return TRUE;
         case CBN_EDITCHANGE: {
-          auto n = Win32::get_window_text(reinterpret_cast<HWND>(lParam));
-          EnableWindow(GetDlgItem(hWnd, IDOK), GetWindowTextLength(reinterpret_cast<HWND>(lParam)) != 0);
+          auto n = Win32::remove_ws_on_both_ends(Win32::get_window_text(reinterpret_cast<HWND>(lParam)));
+          EnableWindow(GetDlgItem(hWnd, IDOK), !n.empty() && m_profileName != n);
           return TRUE;
         }
         default:
@@ -1101,8 +1104,8 @@ private:
   }
   SaveDialogBox() { }
 public:
-  static std::pair<int, Win32::tstring> open(HWND hWnd, Kind kind) {
-    SaveDialogBox sdb{hWnd, kind};
+  static std::pair<int, Win32::tstring> open(HWND hWnd, Kind kind, LPCTSTR oldname) {
+    SaveDialogBox sdb{hWnd, kind, oldname};
     auto r = DialogBoxParam(hInstance, MAKEINTRESOURCE(IDD_SAVE), hWnd, &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
     switch (r) {
     case IDOK:
@@ -1315,7 +1318,7 @@ static void update_profile(HWND hWnd) {
 
 static int save_as(HWND hWnd) {
   auto &s = s_currentGlobalSetting;
-  auto [ret, profileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Save);
+  auto [ret, profileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Save, s.currentProfileName.c_str());
   if (ret == IDCANCEL) {
     Log::debug(TEXT("save as: canceled"));
     return IDCANCEL;
@@ -1489,9 +1492,13 @@ static void init_main_controlls(HWND hWnd) {
   register_handler_map(s_handlerMap, IDC_RENAME,
                        [](HWND hWnd) {
                          auto &s = s_currentGlobalSetting;
-                         auto [ret, newProfileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Rename);
+                         auto [ret, newProfileName] = SaveDialogBox::open(hWnd, SaveDialogBox::Rename, s.currentProfileName.c_str());
                          if (ret == IDCANCEL) {
                            Log::debug(TEXT("rename: canceled"));
+                           return HandlerResult{true, TRUE};
+                         }
+                         if (newProfileName == s.currentProfileName) {
+                           Log::debug(TEXT("rename: not changed"));
                            return HandlerResult{true, TRUE};
                          }
                          delete_profile(newProfileName.c_str());
