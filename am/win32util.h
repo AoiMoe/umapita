@@ -6,6 +6,12 @@ namespace AM::Win32 {
 
 using tstring = std::basic_string<TCHAR>;
 
+inline tstring remove_ws_on_both_ends(const tstring &src) {
+  auto b = std::find_if(src.begin(), src.end(), [](WCHAR c) { return !_istspace(c); });
+  auto e = std::find_if(src.rbegin(), src.rend(), [](WCHAR c) { return !_istspace(c); }).base();
+  return b < e ? tstring{b, e} : tstring{};
+}
+
 //
 // get null-terminated string from Win32 API and return it as tstring
 //
