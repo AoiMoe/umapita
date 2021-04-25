@@ -1366,6 +1366,21 @@ static int confirm_save(HWND hWnd) {
   return IDCANCEL;
 }
 
+static void select_profile(HWND hWnd, int n) {
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
+  auto len = ComboBox_GetLBTextLen(hWndItem, n);
+  if (len == CB_ERR) {
+    Log::info(TEXT("profile %d is not valid"), static_cast<int>(n));
+    return;
+  }
+  auto str = Win32::get_sz(len, [hWndItem, n](LPTSTR buf, std::size_t len) { ComboBox_GetLBText(hWndItem, n, buf); });
+  SetWindowText(hWndItem, str.c_str());
+  PostMessage(hWnd, WM_CHANGE_PROFILE, 0, reinterpret_cast<LPARAM>(hWndItem));
+  //テキストがセレクトされるのがうっとうしいのでクリアする
+  PostMessage(hWndItem, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+}
+
+
 static void init_profile(HWND hWnd) {
   auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
 
@@ -1566,6 +1581,12 @@ static void init_main_controlls(HWND hWnd) {
                          update_main_controlls(hWnd);
                          return HandlerResult{true, TRUE};
                        });
+  for (int id=IDC_SEL_BEGIN; id<=IDC_SEL_END; id++)
+    register_handler_map(s_handlerMap, id,
+                         [](HWND hWndDialog, HWND /*hWndControl*/, int id, int /*notify*/) {
+                           select_profile(hWndDialog, id-IDC_SEL_BEGIN);
+                           return HandlerResult{true, TRUE};
+                         });
 
   update_main_controlls(hWnd);
 }

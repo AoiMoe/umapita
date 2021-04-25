@@ -63,6 +63,8 @@
 #define IDC_DELETE 0x354
 #define IDC_NEW 0x355
 #define IDC_SAVE_DETAIL 0x356
+#define IDC_SEL_BEGIN 0x360
+#define IDC_SEL_END 0x369
 
 #define IDS_TASKTRAY_TIP 0x400
 #define IDS_QUIT 0x401
