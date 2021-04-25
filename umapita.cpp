@@ -1296,16 +1296,19 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
 
 static void set_profile_text(HWND hWnd) {
   Win32::tstring buf;
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
 
   if (s_currentGlobalSetting.currentProfileName.empty())
     buf = Win32::load_string(hInstance, IDS_NEW_PROFILE);
-  else
+  else {
     buf = s_currentGlobalSetting.currentProfileName;
+    ComboBox_SelectString(hWndItem, -1, buf.c_str());
+  }
 
   if (s_currentGlobalSetting.isCurrentProfileChanged)
     buf += Win32::load_string(hInstance, IDS_CHANGED_MARK);
 
-  SetWindowText(GetDlgItem(hWnd, IDC_SELECT_PROFILE), buf.c_str());
+  SetWindowText(hWndItem, buf.c_str());
 }
 
 static void update_profile(HWND hWnd) {
@@ -1363,6 +1366,21 @@ static int confirm_save(HWND hWnd) {
   return IDCANCEL;
 }
 
+static void select_profile(HWND hWnd, int n) {
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
+  auto len = ComboBox_GetLBTextLen(hWndItem, n);
+  if (len == CB_ERR) {
+    Log::info(TEXT("profile %d is not valid"), static_cast<int>(n));
+    return;
+  }
+  auto str = Win32::get_sz(len, [hWndItem, n](LPTSTR buf, std::size_t len) { ComboBox_GetLBText(hWndItem, n, buf); });
+  SetWindowText(hWndItem, str.c_str());
+  PostMessage(hWnd, WM_CHANGE_PROFILE, 0, reinterpret_cast<LPARAM>(hWndItem));
+  //テキストがセレクトされるのがうっとうしいのでクリアする
+  PostMessage(hWndItem, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+}
+
+
 static void init_profile(HWND hWnd) {
   auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
 
@@ -1379,6 +1397,7 @@ static void init_profile(HWND hWnd) {
                            PostMessage(hWnd, WM_CHANGE_PROFILE, 0, reinterpret_cast<LPARAM>(hWndControl));
                            return HandlerResult{true, TRUE};
                          case CBN_SETFOCUS:
+                         case CBN_CLOSEUP:
                            //テキストがセレクトされるのがうっとうしいのでクリアする
                            PostMessage(hWndControl, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
                            return HandlerResult{true, TRUE};
@@ -1562,6 +1581,12 @@ static void init_main_controlls(HWND hWnd) {
                          update_main_controlls(hWnd);
                          return HandlerResult{true, TRUE};
                        });
+  for (int id=IDC_SEL_BEGIN; id<=IDC_SEL_END; id++)
+    register_handler_map(s_handlerMap, id,
+                         [](HWND hWndDialog, HWND /*hWndControl*/, int id, int /*notify*/) {
+                           select_profile(hWndDialog, id-IDC_SEL_BEGIN);
+                           return HandlerResult{true, TRUE};
+                         });
 
   update_main_controlls(hWnd);
 }
@@ -1711,7 +1736,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   case WM_CHANGE_PROFILE: {
     auto hWndControl = reinterpret_cast<HWND>(lParam);
     auto n = Win32::get_window_text(hWndControl);
-    set_profile_text(hWnd);
+    set_profile_text(hWnd); // ユーザの選択で変更定されたエディットボックスの内容を一旦戻す（後に再設定される）
     switch (confirm_save(hWnd)) {
     case IDOK: {
       Log::debug(TEXT("selected: %S"), n.c_str());
