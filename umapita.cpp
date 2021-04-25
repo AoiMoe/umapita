@@ -1296,16 +1296,19 @@ static void init_per_orientation_settings(HWND hWnd, const PerOrientationSetting
 
 static void set_profile_text(HWND hWnd) {
   Win32::tstring buf;
+  auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
 
   if (s_currentGlobalSetting.currentProfileName.empty())
     buf = Win32::load_string(hInstance, IDS_NEW_PROFILE);
-  else
+  else {
     buf = s_currentGlobalSetting.currentProfileName;
+    ComboBox_SelectString(hWndItem, -1, buf.c_str());
+  }
 
   if (s_currentGlobalSetting.isCurrentProfileChanged)
     buf += Win32::load_string(hInstance, IDS_CHANGED_MARK);
 
-  SetWindowText(GetDlgItem(hWnd, IDC_SELECT_PROFILE), buf.c_str());
+  SetWindowText(hWndItem, buf.c_str());
 }
 
 static void update_profile(HWND hWnd) {
@@ -1379,6 +1382,7 @@ static void init_profile(HWND hWnd) {
                            PostMessage(hWnd, WM_CHANGE_PROFILE, 0, reinterpret_cast<LPARAM>(hWndControl));
                            return HandlerResult{true, TRUE};
                          case CBN_SETFOCUS:
+                         case CBN_CLOSEUP:
                            //テキストがセレクトされるのがうっとうしいのでクリアする
                            PostMessage(hWndControl, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
                            return HandlerResult{true, TRUE};
@@ -1711,7 +1715,7 @@ static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
   case WM_CHANGE_PROFILE: {
     auto hWndControl = reinterpret_cast<HWND>(lParam);
     auto n = Win32::get_window_text(hWndControl);
-    set_profile_text(hWnd);
+    set_profile_text(hWnd); // ユーザの選択で変更定されたエディットボックスの内容を一旦戻す（後に再設定される）
     switch (confirm_save(hWnd)) {
     case IDOK: {
       Log::debug(TEXT("selected: %S"), n.c_str());
