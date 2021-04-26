@@ -1203,8 +1203,8 @@ static Handler make_long_integer_box_handler(LONG &stor) {
 }
 
 template <typename Enum>
-Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor) {
-  return [&m, &stor](HWND, UINT, WPARAM wParam, LPARAM lParam) {
+Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor, bool isGlobal = false) {
+  return [&m, &stor, isGlobal](HWND, UINT, WPARAM wParam, LPARAM lParam) {
            switch (HIWORD(wParam)) {
            case BN_CLICKED: {
              int id = LOWORD(wParam);
@@ -1212,7 +1212,8 @@ Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor) {
              if (val != stor) {
                Log::debug(TEXT("check box %X changed: %d -> %d"), id, static_cast<int>(stor) , static_cast<int>(val));
                stor = val;
-               s_currentGlobalSetting.isCurrentProfileChanged = true;
+               if (!isGlobal)
+                 s_currentGlobalSetting.isCurrentProfileChanged = true;
                isDialogChanged = true;
              }
              return HandlerResult{true, TRUE};
@@ -1475,7 +1476,7 @@ static void init_main_controlls(HWND hWnd) {
   auto &setting = s_currentGlobalSetting;
   {
     static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
-    register_handler_map(s_handlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled));
+    register_handler_map(s_handlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled, true));
   }
 
   init_profile(hWnd);
