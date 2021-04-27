@@ -741,7 +741,7 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
   TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, hWnd, pTpmp);
 }
 
-static BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
+static CALLBACK BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
   Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
   auto mi = Win32::make_sized_pod<MONITORINFOEX>();
   GetMonitorInfo(hMonitor, &mi);
@@ -996,7 +996,7 @@ int open_message_box(HWND hWndOwner, LPCTSTR text, LPCTSTR caption, UINT type) {
 
   s_hWndOwner = hWndOwner;
   s_hHook = SetWindowsHookEx(WH_CBT,
-                             [](int code, WPARAM wParam, LPARAM lParam) {
+                             [](int code, WPARAM wParam, LPARAM lParam) CALLBACK {
                                HHOOK hHook = s_hHook;
                                if (code == HCBT_ACTIVATE) {
                                  UnhookWindowsHookEx(hHook);
@@ -1035,7 +1035,7 @@ private:
   Win32::tstring m_profileName;
   SaveDialogBox(HWND hWndOwner, Kind kind, LPCTSTR oldname) : m_hWndOwner{hWndOwner}, m_kind{kind}, m_profileName(oldname) { }
   //
-  static INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  static CALLBACK INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_INITDIALOG) {
       SetWindowLongPtr(hWnd, DWLP_USER, lParam);
     }
@@ -1615,7 +1615,7 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
   s_horizontalGroupBox.set_selected(isHorizontal);
 }
 
-static INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   switch (msg) {
   case WM_INITDIALOG: {
     // override wndproc for group boxes.
