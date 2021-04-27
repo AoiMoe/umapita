@@ -2,12 +2,14 @@
 #include "am/win32util.h"
 #include "am/win32reg.h"
 #include "umapita_res.h"
+#include "umapita_keyhook.h"
 
 namespace Win32 = AM::Win32;
 using AM::Log;
 
 constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
 constexpr UINT WM_CHANGE_PROFILE = WM_USER+0x1001;
+constexpr UINT WM_KEYHOOK = WM_USER+0x1002;
 constexpr UINT TASKTRAY_ID = 1;
 constexpr UINT TIMER_ID = 1;
 constexpr UINT TIMER_PERIOD = 200;
@@ -37,6 +39,8 @@ UINT msgTaskbarCreated = 0;
 Win32::Icon appIcon = nullptr, appIconSm = nullptr;
 Monitors monitors;
 HFONT hFontMainDialog = nullptr;
+HMODULE hModKeyHook = nullptr;
+const KeyhookEntry *keyhookEntry = nullptr;
 
 //
 // 監視対象ウィンドウの状態
@@ -838,6 +842,19 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
   if (!isSettingChanged && ts == lastTargetStatus)
     return {false, {}};
 
+  if (keyhookEntry) {
+    bool isEn = keyhookEntry->is_keyhook_enabled();
+    if (!isEn && ts.hWnd && setting.isEnabled) {
+      // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
+      auto r = keyhookEntry->enable_keyhook(hWndDialog, WM_KEYHOOK, GetWindowThreadProcessId(ts.hWnd, nullptr));
+      Log::info(TEXT("enable_keyhook %hs"), r ? "succeeded":"failed");
+    } else if (isEn && (!setting.isEnabled || !ts.hWnd)) {
+      // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
+      auto r = keyhookEntry->disable_keyhook();
+      Log::info(TEXT("disable_keyhook %hs"), r ? "succeeded":"failed");
+    }
+  }
+
   lastTargetStatus = ts;
 
   if (setting.isEnabled && ts.hWnd && IsWindowVisible(ts.hWnd)) {
@@ -1354,6 +1371,7 @@ static int confirm_save(HWND hWnd) {
     Log::debug(TEXT("unnecessary to save"));
     return IDOK;
   }
+  ShowWindow(hWnd, SW_SHOW);
   auto ret = open_message_box(hWnd,
                               Win32::load_string(hInstance, IDS_CONFIRM_SAVE).c_str(),
                               Win32::load_string(hInstance, IDS_CONFIRM).c_str(),
@@ -1616,6 +1634,15 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
 }
 
 static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  // 再入カウンタ - モーダルダイアログが開いているかどうかを検知するために用意している。
+  // モーダルダイアログが開いている時にメッセージを処理しようとすると 1 よりも大きくなる。
+  // ただし、それ以外にも 1 より大きくなるケースがあるため、使い方に注意する必要がある。
+  // eg. コントロールを変更すると親のウィンドウに WM_COMMAND などを SendMessage してくることがある。
+  static int enterCount = 0;
+  enterCount++;
+  auto deleter = [](int *rcount) { (*rcount)--; };
+  std::unique_ptr<int, decltype (deleter)> auto_decr{&enterCount, deleter};
+
   switch (msg) {
   case WM_INITDIALOG: {
     // override wndproc for group boxes.
@@ -1757,6 +1784,25 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
   }
 
+  case WM_KEYHOOK: {
+    Log::debug(TEXT("WM_KEYHOOK: wParam=%X, lParam=%X, enterCount=%d"),
+               static_cast<unsigned>(wParam), static_cast<unsigned>(lParam), enterCount);
+    if (lParam & 0x80000000U) {
+      // keydown
+      if ((lParam & 0x20000000U) && wParam >= 0x30 && wParam <= 0x39) {
+        // ALT+数字
+        auto n = static_cast<WORD>(wParam & 0x0F);
+        n = (n ? n : 10) - 1;
+        if (enterCount == 1) {
+          // enterCount が 1 よりも大きい場合、モーダルダイアログが開いている可能性があるので送らない。
+          // モーダルダイアログが開いているときに送ると、別のモーダルダイアログが開いたり、いろいろ嫌なことが起こる。
+          PostMessage(hWnd, WM_COMMAND, MAKEWPARAM(n + IDC_SEL_BEGIN, 0), 0);
+        }
+      }
+    }
+    return TRUE;
+  }
+
   default:
     if (msg == msgTaskbarCreated) {
       add_tasktray_icon(hWnd, appIconSm.get());
@@ -1765,6 +1811,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
   }
   return FALSE;
 }
+
 
 static void register_main_dialog_class(HINSTANCE hInst) {
   auto wc = Win32::make_sized_pod<WNDCLASSEX>();
@@ -1782,6 +1829,29 @@ static void register_main_dialog_class(HINSTANCE hInst) {
   RegisterClassEx(&wc);
 }
 
+void load_keyhook() {
+  hModKeyHook = LoadLibrary(KEYHOOK_DLL_NAME);
+  Log::debug(TEXT("hModKeyHook=%p"), hModKeyHook);
+  if (hModKeyHook) {
+    auto f = reinterpret_cast<GetEntryFun>(reinterpret_cast<void *>(GetProcAddress(hModKeyHook, KEYHOOK_GET_ENTRY_FUN_NAME)));
+    Log::debug(TEXT("get_entry=%p"), f);
+    if (f) {
+      keyhookEntry = f();
+      Log::debug(TEXT("keyhookEntry=%p"), keyhookEntry);
+    }
+  }
+  if (!keyhookEntry) {
+    Log::info(TEXT("cannot load \"%S\""), KEYHOOK_DLL_NAME);
+  }
+}
+
+void unload_keyhook() {
+  keyhookEntry = nullptr;
+  if (hModKeyHook)
+    FreeLibrary(hModKeyHook);
+  hModKeyHook = nullptr;
+}
+
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
   hInstance = hInst;
 
@@ -1789,6 +1859,8 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     PostMessage(hWnd, WM_COMMAND, IDC_SHOW, 0);
     return 0;
   }
+
+  load_keyhook();
 
   auto cx = GetSystemMetrics(SM_CXICON);
   auto cy = GetSystemMetrics(SM_CYICON);
@@ -1810,6 +1882,8 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
+
+  unload_keyhook();
 
   return msg.wParam;
 }

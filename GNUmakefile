@@ -2,6 +2,7 @@ CXX ?= g++
 CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 -I. -I$(_OUTDIR)
 WINDRES ?= LANG=C windres
 LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
+KEYHOOK_LIBS ?= -luser32
 
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
@@ -27,7 +28,7 @@ VER_2 ?= $(MONTHDAY)
 VER_3 ?= $(REV)
 
 _AMOUTDIR = $(_OUTDIR)/am
-SRCS = $(wildcard am/*.cpp) $(wildcard *.cpp)
+SRCS = $(wildcard am/*.cpp) umapita.cpp
 OBJS = $(SRCS:%.cpp=$(_OUTDIR)/%.o)
 DEPS = $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
 RC_SRCS = umapita_res.rc
@@ -36,6 +37,10 @@ RES = $(RC_SRCS:%.rc=$(_OUTDIR)/%.res)
 MANIFEST_SRCS = umapita.manifest.tmpl
 MANIFEST = $(MANIFEST_SRCS:%.manifest.tmpl=$(_OUTDIR)/%.manifest)
 EXE = $(_OUTDIR)/umapita.exe
+KEYHOOK_SRCS = umapita_keyhook.cpp
+KEYHOOK_OBJS = $(KEYHOOK_SRCS:%.cpp=$(_OUTDIR)/%.o)
+KEYHOOK_DEPS = $(KEYHOOK_OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
+KEYHOOK_DLL = $(_OUTDIR)/umapita_keyhook.dll
 YEAR = $(shell echo $(VER) | sed -E 's/^(20[0-9][0-9]).*/\1/;s/undefined/0/')
 MONTHDAY = $(shell echo $(VER) | sed -E 's/.*([0-9][0-9][0-9][0-9])-.*/\1/;s/^0//;s/undefined/0/')
 REV = $(shell echo $(VER) | sed -E 's/.*-([0-9][0-9])$$/\1/;s/^0//;s/undefined/0/')
@@ -59,14 +64,19 @@ _release:
 	rm -rf $(_OUTDIR)
 	@$(MAKE) --no-print-directory OUTDIR=$(OUTDIR) all
 	rm -f $(_RELEASE_ZIP)
-	zip -j $(_RELEASE_ZIP) README.md $(EXE)
+	zip -j $(_RELEASE_ZIP) README.md $(EXE) $(KEYHOOK_DLL)
 
 _dep: $(DEPS)
 
--include $(DEPS)
+_keyhook_dep: $(KEYHOOK_DEPS)
 
-$(EXE): $(OBJS) $(RES) | _dep
-	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(LIBS)
+-include $(DEPS) $(KEYHOOK_DEPS)
+
+$(EXE): $(OBJS) $(RES) $(KEYHOOK_DLL) | _dep
+	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(KEYHOOK_DLL) $(LIBS)
+
+$(KEYHOOK_DLL): $(KEYHOOK_OBJS) | _keyhook_dep
+	$(CXX) -static -shared $(CXXFLAGS) -g -o $@ $(KEYHOOK_OBJS) $(KEYHOOK_LIBS)
 
 $(_OUTDIR)/pch.h.gch: pch.h am/pch.h | $(_OUTDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<
