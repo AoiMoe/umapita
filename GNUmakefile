@@ -8,7 +8,7 @@ EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
 SUBSYSTEM ?= windows
 
-MSYSTEM ?= MINGW64
+MSYSTEM ?= MINGW32
 export MSYSTEM
 
 ifeq ($(MSYSTEM),MINGW32)
@@ -17,9 +17,12 @@ TARGET_BITS = 32bit
 else
 TARGET_ARCH ?= AMD64
 TARGET_BITS = 64bit
+ifndef FORCE_64BIT
+$(error umapita should be compiled for 32bit target, because of keyhook)
+endif
 endif
 OUTDIR ?= out
-_OUTDIR ?= $(OUTDIR).$(TARGET_BITS)
+_OUTDIR ?= $(OUTDIR)
 
 VER ?= $(shell git name-rev --tags --name-only --refs '20[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9]' HEAD | head -1)
 VER_0 ?= 1
@@ -57,7 +60,7 @@ debug:
 release:
 	@$(MAKE) --no-print-directory _release OUTDIR=out.release VER=$(VER)
 
-_RELEASE_ZIP = umapita-$(VER)-$(TARGET_BITS).zip
+_RELEASE_ZIP = umapita-$(VER).zip
 _release:
 	@+test x$(VER) != x"undefined" || (echo error: VER is undefined. >&2; exit 1)
 	@+test x$(VER) != x"" || (echo error: VER not defined. >&2; exit 1)
