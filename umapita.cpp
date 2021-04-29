@@ -34,13 +34,13 @@ public:
 };
 using Monitors = std::vector<Monitor>;
 
-HINSTANCE hInstance;
-UINT msgTaskbarCreated = 0;
-Win32::Icon appIcon = nullptr, appIconSm = nullptr;
-Monitors monitors;
-HFONT hFontMainDialog = nullptr;
-HMODULE hModKeyHook = nullptr;
-const KeyhookEntry *keyhookEntry = nullptr;
+HINSTANCE s_hInstance;
+UINT s_msgTaskbarCreated = 0;
+Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
+Monitors s_monitors;
+HFONT s_hFontMainDialog = nullptr;
+HMODULE s_hModKeyHook = nullptr;
+const KeyhookEntry *s_keyhookEntry = nullptr;
 
 //
 // 監視対象ウィンドウの状態
@@ -139,7 +139,7 @@ struct PerOrientationSettingID {
   SelectMonitorMap selectMonitor;
 };
 
-constexpr PerOrientationSettingID verticalSettingID = {
+constexpr PerOrientationSettingID VERTICAL_SETTING_ID = {
   // monitorNumber
   IDC_V_MONITOR_NUMBER,
   // isConsiderTaskbar
@@ -169,7 +169,7 @@ constexpr PerOrientationSettingID verticalSettingID = {
   // selectMonitor
   {IDC_V_SELECT_MONITORS, IDM_V_MONITOR_BASE},
 };
-constexpr PerOrientationSettingID horizontalSettingID = {
+constexpr PerOrientationSettingID HORIZONTAL_SETTING_ID = {
   // monitorNumber
   IDC_H_MONITOR_NUMBER,
   // isConsiderTaskbar
@@ -229,7 +229,7 @@ class CustomGroupBox {
     HDC hdc = BeginPaint(hWnd, &ps);
 
     // テキスト描画
-    auto scopedSelect = Win32::scoped_select_font(hdc, hFontMainDialog);
+    auto scopedSelect = Win32::scoped_select_font(hdc, s_hFontMainDialog);
 
     TEXTMETRIC tm;
     GetTextMetrics(hdc, &tm);
@@ -372,7 +372,7 @@ struct PerOrientationSettingRegMap {
   RegMap<RegLongMap> aspectY;
 };
 
-constexpr PerOrientationSettingRegMap verticalSettingRegMap = {
+constexpr PerOrientationSettingRegMap REGMAP_VERTICAL_SETTING = {
   {TEXT("vMonitorNumber"), {}, DEFAULT_SETTING.verticalSetting.monitorNumber},
   {TEXT("vIsConsiderTaskbar"), {}, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar},
   {TEXT("vWindowArea"), PerOrientationSettingRegMap::WindowArea, DEFAULT_SETTING.verticalSetting.windowArea},
@@ -385,7 +385,7 @@ constexpr PerOrientationSettingRegMap verticalSettingRegMap = {
   {TEXT("vAspectY"), {}, DEFAULT_SETTING.verticalSetting.aspectY},
 };
 
-constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
+constexpr PerOrientationSettingRegMap REGMAP_HORIZONTAL_SETTING = {
   {TEXT("hMonitorNumber"), {}, DEFAULT_SETTING.horizontalSetting.monitorNumber},
   {TEXT("hIsConsiderTaskbar"), {}, DEFAULT_SETTING.horizontalSetting.isConsiderTaskbar},
   {TEXT("hWindowArea"), PerOrientationSettingRegMap::WindowArea, DEFAULT_SETTING.horizontalSetting.windowArea},
@@ -398,10 +398,10 @@ constexpr PerOrientationSettingRegMap horizontalSettingRegMap = {
   {TEXT("hAspectY"), {}, DEFAULT_SETTING.horizontalSetting.aspectY},
 };
 
-constexpr RegMap<RegBoolMap> isLockedRegMap = {TEXT("isLocked"), RegBoolMap{}, DEFAULT_SETTING.isLocked};
-constexpr RegMap<RegBoolMap> isEnabledRegMap = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
-constexpr RegMap<RegBoolMap> isCurrentProfileChangedRegMap = {TEXT("isCurrentProfileChanged"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged};
-constexpr RegMap<RegStringMap> currentProfileNameRegMap = {TEXT("currentProfileName"), RegStringMap{}, DEFAULT_GLOBAL_SETTING.currentProfileName};
+constexpr RegMap<RegBoolMap> REGMAP_IS_LOCKED = {TEXT("isLocked"), RegBoolMap{}, DEFAULT_SETTING.isLocked};
+constexpr RegMap<RegBoolMap> REGMAP_IS_ENABLED = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
+constexpr RegMap<RegBoolMap> REGMAP_IS_CURRENT_PROFILE_CHANGED = {TEXT("isCurrentProfileChanged"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged};
+constexpr RegMap<RegStringMap> REGMAP_CURRENT_PROFILE_NAME = {TEXT("currentProfileName"), RegStringMap{}, DEFAULT_GLOBAL_SETTING.currentProfileName};
 
 
 struct RegGetFailed : AM::RuntimeError<RegGetFailed> { };
@@ -579,9 +579,9 @@ static Setting load_setting(LPCTSTR profileName) {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
       return Setting{
-        reg_get(key, isLockedRegMap),
-        reg_get_per_orientation_setting(key, verticalSettingRegMap),
-        reg_get_per_orientation_setting(key, horizontalSettingRegMap),
+        reg_get(key, REGMAP_IS_LOCKED),
+        reg_get_per_orientation_setting(key, REGMAP_VERTICAL_SETTING),
+        reg_get_per_orientation_setting(key, REGMAP_HORIZONTAL_SETTING),
       };
     }
     catch (RegGetFailed &) {
@@ -600,9 +600,9 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   try {
     [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, isLockedRegMap, s.isLocked);
-      reg_put_per_orientation_setting(key, verticalSettingRegMap, s.verticalSetting);
-      reg_put_per_orientation_setting(key, horizontalSettingRegMap, s.horizontalSetting);
+      reg_put(key, REGMAP_IS_LOCKED, s.isLocked);
+      reg_put_per_orientation_setting(key, REGMAP_VERTICAL_SETTING, s.verticalSetting);
+      reg_put_per_orientation_setting(key, REGMAP_HORIZONTAL_SETTING, s.horizontalSetting);
     }
     catch (RegPutFailed &) {
     }
@@ -620,9 +620,9 @@ static GlobalSetting load_global_setting() {
   try {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
-      isEnabled = reg_get(key, isEnabledRegMap);
-      isCurrentProfileChanged = reg_get(key, isCurrentProfileChangedRegMap);
-      currentProfileName = reg_get(key, currentProfileNameRegMap);
+      isEnabled = reg_get(key, REGMAP_IS_ENABLED);
+      isCurrentProfileChanged = reg_get(key, REGMAP_IS_CURRENT_PROFILE_CHANGED);
+      currentProfileName = reg_get(key, REGMAP_CURRENT_PROFILE_NAME);
     }
     catch (RegGetFailed &) {
     }
@@ -639,9 +639,9 @@ static void save_global_setting(const GlobalSetting &s) {
   try {
     [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, isEnabledRegMap, s.isEnabled);
-      reg_put(key, isCurrentProfileChangedRegMap, s.isCurrentProfileChanged);
-      reg_put(key, currentProfileNameRegMap, s.currentProfileName);
+      reg_put(key, REGMAP_IS_ENABLED, s.isEnabled);
+      reg_put(key, REGMAP_IS_CURRENT_PROFILE_CHANGED, s.isCurrentProfileChanged);
+      reg_put(key, REGMAP_CURRENT_PROFILE_NAME, s.currentProfileName);
     }
     catch (RegPutFailed &) {
     }
@@ -712,7 +712,7 @@ static BOOL add_tasktray_icon(HWND hWnd, HICON hIcon) {
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
-  LoadString(hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
+  LoadString(s_hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
   return Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -740,7 +740,7 @@ static void show_popup_menu(HWND hWnd, BOOL isTray = FALSE) {
   GetCursorPos(&point);
   SetForegroundWindow(hWnd);
 
-  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_POPUP));
+  auto menu = Win32::load_menu(s_hInstance, MAKEINTRESOURCE(IDM_POPUP));
   auto submenu = Win32::get_sub_menu(menu, 0);
   TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, hWnd, pTpmp);
 }
@@ -780,7 +780,7 @@ static void update_monitors() {
   {
     ret.emplace(ret.begin(), TEXT("<all monitors>"), whole, whole, false);
   }
-  monitors = std::move(ret);
+  s_monitors = std::move(ret);
 }
 
 static Win32::Menu create_monitors_menu(int idbase) {
@@ -788,7 +788,7 @@ static Win32::Menu create_monitors_menu(int idbase) {
   int id = idbase;
   int index = -1;
 
-  for ([[maybe_unused]] auto const &[name, whole, work, isPrimary] : monitors) {
+  for ([[maybe_unused]] auto const &[name, whole, work, isPrimary] : s_monitors) {
     TCHAR tmp[1024];
     _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
               index++, whole.left, whole.top, whole.right, whole.bottom, name.c_str());
@@ -810,10 +810,10 @@ void show_button_menu(HWND hWnd, const MenuType &menu) {
 static const Monitor *get_current_monitor(int monitorNumber) {
   auto mn = monitorNumber + 1;
 
-  if (mn < 0 || static_cast<size_t>(mn) >= monitors.size())
+  if (mn < 0 || static_cast<size_t>(mn) >= s_monitors.size())
     return NULL;
 
-  return &monitors[mn];
+  return &s_monitors[mn];
 }
 
 static TargetStatus get_target_information() {
@@ -842,15 +842,15 @@ static AdjustTargetResult adjust_target(HWND hWndDialog, bool isSettingChanged) 
   if (!isSettingChanged && ts == lastTargetStatus)
     return {false, {}};
 
-  if (keyhookEntry) {
-    bool isEn = keyhookEntry->is_keyhook_enabled();
+  if (s_keyhookEntry) {
+    bool isEn = s_keyhookEntry->is_keyhook_enabled();
     if (!isEn && ts.hWnd && setting.isEnabled) {
       // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
-      auto r = keyhookEntry->enable_keyhook(hWndDialog, WM_KEYHOOK, GetWindowThreadProcessId(ts.hWnd, nullptr));
+      auto r = s_keyhookEntry->enable_keyhook(hWndDialog, WM_KEYHOOK, GetWindowThreadProcessId(ts.hWnd, nullptr));
       Log::info(TEXT("enable_keyhook %hs"), r ? "succeeded":"failed");
     } else if (isEn && (!setting.isEnabled || !ts.hWnd)) {
       // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
-      auto r = keyhookEntry->disable_keyhook();
+      auto r = s_keyhookEntry->disable_keyhook();
       Log::info(TEXT("disable_keyhook %hs"), r ? "succeeded":"failed");
     }
   }
@@ -1022,7 +1022,7 @@ int open_message_box(HWND hWndOwner, LPCTSTR text, LPCTSTR caption, UINT type) {
                                }
                                return CallNextHookEx(hHook, code, wParam, lParam);
                              },
-                             hInstance, GetCurrentThreadId());
+                             s_hInstance, GetCurrentThreadId());
   auto ret = MessageBox(hWndOwner, text, caption, type);
   s_hWndOwner = nullptr;
   s_hHook = nullptr;
@@ -1066,9 +1066,9 @@ private:
       fill_profile_to_combobox(GetDlgItem(hWnd, IDC_SELECT_PROFILE));
       SetWindowText(GetDlgItem(hWnd, IDC_SELECT_PROFILE), m_profileName.c_str());
       EnableWindow(GetDlgItem(hWnd, IDOK), false);
-      SetWindowText(hWnd, Win32::load_string(hInstance, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE).c_str());
+      SetWindowText(hWnd, Win32::load_string(s_hInstance, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE).c_str());
       WCHAR buf[256];
-      auto detail = Win32::load_string(hInstance, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
+      auto detail = Win32::load_string(s_hInstance, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       _stprintf(buf, detail.c_str(), m_profileName.c_str());
       SetWindowText(GetDlgItem(hWnd, IDC_SAVE_DETAIL), buf);
       adjust_popup(m_hWndOwner, hWnd);
@@ -1085,8 +1085,8 @@ private:
           return TRUE;
         if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
           TCHAR tmp[256];
-          _stprintf(tmp, Win32::load_string(hInstance, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
-          auto r = open_message_box(hWnd, tmp, Win32::load_string(hInstance, IDS_CONFIRM).c_str(), MB_OKCANCEL);
+          _stprintf(tmp, Win32::load_string(s_hInstance, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
+          auto r = open_message_box(hWnd, tmp, Win32::load_string(s_hInstance, IDS_CONFIRM).c_str(), MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -1123,7 +1123,7 @@ private:
 public:
   static std::pair<int, Win32::tstring> open(HWND hWnd, Kind kind, LPCTSTR oldname) {
     SaveDialogBox sdb{hWnd, kind, oldname};
-    auto r = DialogBoxParam(hInstance, MAKEINTRESOURCE(IDD_SAVE), hWnd, &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
+    auto r = DialogBoxParam(s_hInstance, MAKEINTRESOURCE(IDD_SAVE), hWnd, &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
     switch (r) {
     case IDOK:
       return std::make_pair(IDOK, sdb.m_profileName);
@@ -1146,7 +1146,7 @@ using HandlerResult = std::pair<bool, INT_PTR>;
 using Handler = std::function<HandlerResult (HWND, UINT, WPARAM, LPARAM)>;
 using HandlerMap = std::unordered_map<int, Handler>;
 
-static bool isDialogChanged = false;
+static bool s_isDialogChanged = false;
 static HandlerMap s_handlerMap;
 
 template <typename Enum, std::size_t Num>
@@ -1210,7 +1210,7 @@ static Handler make_long_integer_box_handler(LONG &stor) {
                Log::debug(TEXT("text box %X changed: %d -> %d"), id, stor, val);
                stor = val;
                s_currentGlobalSetting.isCurrentProfileChanged = true;
-               isDialogChanged = true;
+               s_isDialogChanged = true;
              }
              return HandlerResult{true, TRUE};
            }
@@ -1231,7 +1231,7 @@ Handler make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor, boo
                stor = val;
                if (!isGlobal)
                  s_currentGlobalSetting.isCurrentProfileChanged = true;
-               isDialogChanged = true;
+               s_isDialogChanged = true;
              }
              return HandlerResult{true, TRUE};
            }
@@ -1251,7 +1251,7 @@ Handler make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
                  Log::debug(TEXT("radio button %X changed: %d -> %d"), cid, static_cast<int>(stor), static_cast<int>(tag));
                  stor = tag;
                  s_currentGlobalSetting.isCurrentProfileChanged = true;
-                 isDialogChanged = true;
+                 s_isDialogChanged = true;
                  return HandlerResult{true, TRUE};
                }
              }
@@ -1317,14 +1317,14 @@ static void set_profile_text(HWND hWnd) {
   auto hWndItem = GetDlgItem(hWnd, IDC_SELECT_PROFILE);
 
   if (s_currentGlobalSetting.currentProfileName.empty())
-    buf = Win32::load_string(hInstance, IDS_NEW_PROFILE);
+    buf = Win32::load_string(s_hInstance, IDS_NEW_PROFILE);
   else {
     buf = s_currentGlobalSetting.currentProfileName;
     ComboBox_SelectString(hWndItem, -1, buf.c_str());
   }
 
   if (s_currentGlobalSetting.isCurrentProfileChanged)
-    buf += Win32::load_string(hInstance, IDS_CHANGED_MARK);
+    buf += Win32::load_string(s_hInstance, IDS_CHANGED_MARK);
 
   SetWindowText(hWndItem, buf.c_str());
 }
@@ -1373,8 +1373,8 @@ static int confirm_save(HWND hWnd) {
   }
   ShowWindow(hWnd, SW_SHOW);
   auto ret = open_message_box(hWnd,
-                              Win32::load_string(hInstance, IDS_CONFIRM_SAVE).c_str(),
-                              Win32::load_string(hInstance, IDS_CONFIRM).c_str(),
+                              Win32::load_string(s_hInstance, IDS_CONFIRM_SAVE).c_str(),
+                              Win32::load_string(s_hInstance, IDS_CONFIRM).c_str(),
                               MB_YESNOCANCEL);
   switch (ret) {
   case IDYES:
@@ -1447,21 +1447,21 @@ static void update_per_orientation_lock_status(HWND hWnd, const PerOrientationSe
 
 static void update_lock_status(HWND hWnd) {
   auto isLocked = s_currentGlobalSetting.currentProfile.isLocked;
-  update_per_orientation_lock_status(hWnd, verticalSettingID, isLocked);
-  update_per_orientation_lock_status(hWnd, horizontalSettingID, isLocked);
+  update_per_orientation_lock_status(hWnd, VERTICAL_SETTING_ID, isLocked);
+  update_per_orientation_lock_status(hWnd, HORIZONTAL_SETTING_ID, isLocked);
 }
 
 static void update_main_controlls(HWND hWnd) {
   auto &setting = s_currentGlobalSetting;
   set_check_button(hWnd, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
   update_profile(hWnd);
-  update_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
-  update_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
+  update_per_orientation_settings(hWnd, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
+  update_per_orientation_settings(hWnd, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
   update_lock_status(hWnd);
 }
 
 static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu() {
-  auto menu = Win32::load_menu(hInstance, MAKEINTRESOURCE(IDM_PROFILE));
+  auto menu = Win32::load_menu(s_hInstance, MAKEINTRESOURCE(IDM_PROFILE));
   auto submenu = Win32::get_sub_menu(menu, 0);
   auto const &s = s_currentGlobalSetting;
 
@@ -1498,8 +1498,8 @@ static void init_main_controlls(HWND hWnd) {
   }
 
   init_profile(hWnd);
-  init_per_orientation_settings(hWnd, verticalSettingID, setting.currentProfile.verticalSetting);
-  init_per_orientation_settings(hWnd, horizontalSettingID, setting.currentProfile.horizontalSetting);
+  init_per_orientation_settings(hWnd, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
+  init_per_orientation_settings(hWnd, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
 
   register_handler_map(s_handlerMap, IDC_OPEN_PROFILE_MENU,
                        make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
@@ -1512,7 +1512,7 @@ static void init_main_controlls(HWND hWnd) {
                          Log::debug(TEXT("IDC_LOCK received"));
                          s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
                          s_currentGlobalSetting.isCurrentProfileChanged = true;
-                         isDialogChanged = true;
+                         s_isDialogChanged = true;
                          return HandlerResult{true, TRUE};
                        });
   register_handler_map(s_handlerMap, IDC_SAVE,
@@ -1551,10 +1551,10 @@ static void init_main_controlls(HWND hWnd) {
                          if (s.currentProfileName.empty())
                            return HandlerResult{true, TRUE};
                          TCHAR tmp[256];
-                         _stprintf(tmp, Win32::load_string(hInstance, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
+                         _stprintf(tmp, Win32::load_string(s_hInstance, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
                          auto ret = open_message_box(hWnd,
                                                      tmp,
-                                                     Win32::load_string(hInstance, IDS_CONFIRM_DELETE_TITLE).c_str(),
+                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_DELETE_TITLE).c_str(),
                                                      MB_OKCANCEL);
                          switch (ret) {
                          case IDCANCEL:
@@ -1562,7 +1562,7 @@ static void init_main_controlls(HWND hWnd) {
                          }
                          delete_profile(s.currentProfileName.c_str());
                          s.currentProfileName = TEXT("");
-                         isDialogChanged = true;
+                         s_isDialogChanged = true;
                          update_main_controlls(hWnd);
                          return HandlerResult{true, TRUE};
                        });
@@ -1576,8 +1576,8 @@ static void init_main_controlls(HWND hWnd) {
                          }
                          auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
                          auto ret = open_message_box(hWnd,
-                                                     Win32::load_string(hInstance, IDS_CONFIRM_INIT).c_str(),
-                                                     Win32::load_string(hInstance, IDS_CONFIRM_INIT_TITLE).c_str(),
+                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_INIT).c_str(),
+                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_INIT_TITLE).c_str(),
                                                      type);
                          switch (ret) {
                          case IDCANCEL:
@@ -1596,7 +1596,7 @@ static void init_main_controlls(HWND hWnd) {
                            break;
                          }
                          s.currentProfileName = TEXT("");
-                         isDialogChanged = true;
+                         s_isDialogChanged = true;
                          update_main_controlls(hWnd);
                          return HandlerResult{true, TRUE};
                        });
@@ -1626,7 +1626,7 @@ static void update_target_status_text(HWND hWnd, const TargetStatus &ts) {
               static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(ts.hWnd)),
               ts.windowRect.left, ts.windowRect.top, wW, wH,
               ts.clientRect.left, ts.clientRect.top, cW, cH,
-              Win32::load_string(hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
+              Win32::load_string(s_hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
   }
   SetWindowText(GetDlgItem(hWnd, IDC_TARGET_STATUS), tmp);
   s_verticalGroupBox.set_selected(isVertical);
@@ -1651,7 +1651,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = GetSystemMenu(hWnd, FALSE);
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(hInstance, IDS_QUIT).c_str());
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(s_hInstance, IDS_QUIT).c_str());
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
@@ -1679,7 +1679,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
                            SetForegroundWindow(hWnd);
                            return HandlerResult{true, TRUE};
                          });
-    add_tasktray_icon(hWnd, appIconSm.get());
+    add_tasktray_icon(hWnd, s_appIconSm.get());
     PostMessage(hWnd, WM_TIMER, TIMER_ID, 0);
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     update_monitors();
@@ -1727,11 +1727,11 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     if (auto i = s_handlerMap.find(static_cast<int>(id)); i != s_handlerMap.end())
       if (auto ret = i->second(hWnd, msg, wParam, lParam); ret.first)
         return ret.second;
-    if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + monitors.size()) {
+    if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + s_monitors.size()) {
       set_monitor_number(hWnd, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
       return TRUE;
     }
-    if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + monitors.size()) {
+    if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + s_monitors.size()) {
       set_monitor_number(hWnd, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
       return TRUE;
     }
@@ -1743,12 +1743,12 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
 
   case WM_TIMER:
-    if (auto r = adjust_target(hWnd, isDialogChanged); r.isChanged) {
+    if (auto r = adjust_target(hWnd, s_isDialogChanged); r.isChanged) {
       update_target_status_text(hWnd, r.targetStatus);
       update_lock_status(hWnd);
       set_profile_text(hWnd);
     }
-    isDialogChanged = false;
+    s_isDialogChanged = false;
     SetTimer(hWnd, TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
 
@@ -1758,7 +1758,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
 
   case WM_SETFONT:
     // ダイアログのフォントを明示的に設定していると呼ばれる
-    hFontMainDialog = reinterpret_cast<HFONT>(wParam);
+    s_hFontMainDialog = reinterpret_cast<HFONT>(wParam);
     return TRUE;
 
   case WM_CHANGE_PROFILE: {
@@ -1777,7 +1777,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
       Log::debug(TEXT("canceled"));
       break;
     }
-    isDialogChanged = true;
+    s_isDialogChanged = true;
     update_main_controlls(hWnd);
     //テキストがセレクトされるのがうっとうしいのでクリアする
     PostMessage(hWndControl, CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
@@ -1804,8 +1804,8 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
   }
 
   default:
-    if (msg == msgTaskbarCreated) {
-      add_tasktray_icon(hWnd, appIconSm.get());
+    if (msg == s_msgTaskbarCreated) {
+      add_tasktray_icon(hWnd, s_appIconSm.get());
       return TRUE;
     }
   }
@@ -1820,40 +1820,40 @@ static void register_main_dialog_class(HINSTANCE hInst) {
   wc.cbClsExtra = 0;
   wc.cbWndExtra = DLGWINDOWEXTRA;
   wc.hInstance = hInst;
-  wc.hIcon = appIcon.get();
+  wc.hIcon = s_appIcon.get();
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW);
   wc.lpszMenuName = nullptr;
   wc.lpszClassName = TEXT(UMAPITA_MAIN_WINDOW_CLASS);
-  wc.hIconSm = appIconSm.get();
+  wc.hIconSm = s_appIconSm.get();
   RegisterClassEx(&wc);
 }
 
 void load_keyhook() {
-  hModKeyHook = LoadLibrary(KEYHOOK_DLL_NAME);
-  Log::debug(TEXT("hModKeyHook=%p"), hModKeyHook);
-  if (hModKeyHook) {
-    auto f = reinterpret_cast<GetEntryFun>(reinterpret_cast<void *>(GetProcAddress(hModKeyHook, KEYHOOK_GET_ENTRY_FUN_NAME)));
+  s_hModKeyHook = LoadLibrary(KEYHOOK_DLL_NAME);
+  Log::debug(TEXT("s_hModKeyHook=%p"), s_hModKeyHook);
+  if (s_hModKeyHook) {
+    auto f = reinterpret_cast<GetEntryFun>(reinterpret_cast<void *>(GetProcAddress(s_hModKeyHook, KEYHOOK_GET_ENTRY_FUN_NAME)));
     Log::debug(TEXT("get_entry=%p"), f);
     if (f) {
-      keyhookEntry = f();
-      Log::debug(TEXT("keyhookEntry=%p"), keyhookEntry);
+      s_keyhookEntry = f();
+      Log::debug(TEXT("s_keyhookEntry=%p"), s_keyhookEntry);
     }
   }
-  if (!keyhookEntry) {
+  if (!s_keyhookEntry) {
     Log::info(TEXT("cannot load \"%S\""), KEYHOOK_DLL_NAME);
   }
 }
 
 void unload_keyhook() {
-  keyhookEntry = nullptr;
-  if (hModKeyHook)
-    FreeLibrary(hModKeyHook);
-  hModKeyHook = nullptr;
+  s_keyhookEntry = nullptr;
+  if (s_hModKeyHook)
+    FreeLibrary(s_hModKeyHook);
+  s_hModKeyHook = nullptr;
 }
 
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
-  hInstance = hInst;
+  s_hInstance = hInst;
 
   if (HWND hWnd = FindWindow(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); hWnd) {
     PostMessage(hWnd, WM_COMMAND, IDC_SHOW, 0);
@@ -1865,14 +1865,14 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
   auto cx = GetSystemMetrics(SM_CXICON);
   auto cy = GetSystemMetrics(SM_CYICON);
 
-  appIcon = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), cx, cy, 0);
-  appIconSm = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), 16, 16, 0);
+  s_appIcon = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), cx, cy, 0);
+  s_appIconSm = Win32::load_icon_image(hInst, MAKEINTRESOURCE(IDI_UMAPITA), 16, 16, 0);
 
   register_main_dialog_class(hInst);
-  msgTaskbarCreated = RegisterWindowMessage(TEXT("TaskbarCreated"));
+  s_msgTaskbarCreated = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
-  auto hWnd = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
-  auto hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDA_UMAPITA));
+  auto hWnd = CreateDialog(s_hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc);
+  auto hAccel = LoadAccelerators(s_hInstance, MAKEINTRESOURCE(IDA_UMAPITA));
   MSG msg;
   while (GetMessage(&msg, nullptr, 0, 0)) {
     if (TranslateAccelerator(hWnd, hAccel, &msg))
