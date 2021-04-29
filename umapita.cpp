@@ -1677,6 +1677,18 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
                            dialog.set_foreground();
                            return HandlerResult{true, TRUE};
                          });
+    for (auto i=0; i<MAX_AVAILABLE_MONITORS+2; i++) {
+      register_handler_map(s_handlerMap, IDM_V_MONITOR_BASE+i,
+                           [](Window dialog, Window, int id, int) {
+                             set_monitor_number(dialog, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
+                             return HandlerResult{true, TRUE};
+                           });
+      register_handler_map(s_handlerMap, IDM_H_MONITOR_BASE+i,
+                           [](Window dialog, Window, int id, int) {
+                             set_monitor_number(dialog, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
+                             return HandlerResult{true, TRUE};
+                           });
+    }
     add_tasktray_icon(dialog, s_appIconSm.get());
     dialog.post(WM_TIMER, TIMER_ID, 0);
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
@@ -1725,14 +1737,6 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     if (auto i = s_handlerMap.find(static_cast<int>(id)); i != s_handlerMap.end())
       if (auto ret = i->second(dialog, msg, wParam, lParam); ret.first)
         return ret.second;
-    if (id >= IDM_V_MONITOR_BASE && id < IDM_V_MONITOR_BASE + 2 + s_monitors.size()) {
-      set_monitor_number(dialog, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
-      return TRUE;
-    }
-    if (id >= IDM_H_MONITOR_BASE && id < IDM_H_MONITOR_BASE + 2 + s_monitors.size()) {
-      set_monitor_number(dialog, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
-      return TRUE;
-    }
     return FALSE;
   }
 
