@@ -35,7 +35,6 @@ public:
 };
 using Monitors = std::vector<Monitor>;
 
-HINSTANCE s_hInstance;
 UINT s_msgTaskbarCreated = 0;
 Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
 Monitors s_monitors;
@@ -709,7 +708,7 @@ static BOOL add_tasktray_icon(Window window, HICON hIcon) {
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
-  LoadString(s_hInstance, IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
+  LoadString(window.get_instance(), IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
   return Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -734,7 +733,7 @@ static void show_popup_menu(Window window, BOOL isTray = FALSE) {
   GetCursorPos(&point);
   window.set_foreground();
 
-  auto menu = Win32::load_menu(s_hInstance, MAKEINTRESOURCE(IDM_POPUP));
+  auto menu = Win32::load_menu(window.get_instance(), MAKEINTRESOURCE(IDM_POPUP));
   auto submenu = Win32::get_sub_menu(menu, 0);
   TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
 }
@@ -1019,7 +1018,7 @@ int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
                                }
                                return CallNextHookEx(hHook, code, wParam, lParam);
                              },
-                             s_hInstance, GetCurrentThreadId());
+                             owner.get_instance(), GetCurrentThreadId());
   auto ret = owner.message_box(text, caption, type);
   s_owner.reset();
   s_hHook = nullptr;
@@ -1061,12 +1060,13 @@ private:
   INT_PTR dialog_proc(Window window, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_INITDIALOG: {
+      auto hInst = window.get_instance();
       fill_profile_to_combobox(window.get_item(IDC_SELECT_PROFILE));
       window.get_item(IDC_SELECT_PROFILE).set_text(m_profileName);
       window.get_item(IDOK).enable(false);
-      window.set_text(Win32::load_string(s_hInstance, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
+      window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
       WCHAR buf[256];
-      auto detail = Win32::load_string(s_hInstance, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
+      auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       _stprintf(buf, detail.c_str(), m_profileName.c_str());
       window.get_item(IDC_SAVE_DETAIL).set_text(buf);
       adjust_popup(m_owner, window);
@@ -1082,9 +1082,10 @@ private:
         if (n.empty())
           return TRUE;
         if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
+          auto hInst = window.get_instance();
           TCHAR tmp[256];
-          _stprintf(tmp, Win32::load_string(s_hInstance, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
-          auto r = open_message_box(window, tmp, Win32::load_string(s_hInstance, IDS_CONFIRM).c_str(), MB_OKCANCEL);
+          _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
+          auto r = open_message_box(window, tmp, Win32::load_string(hInst, IDS_CONFIRM).c_str(), MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -1121,7 +1122,7 @@ private:
 public:
   static std::pair<int, Win32::tstring> open(Window owner, Kind kind, LPCTSTR oldname) {
     SaveDialogBox sdb{owner, kind, oldname};
-    auto r = DialogBoxParam(s_hInstance, MAKEINTRESOURCE(IDD_SAVE), owner.get(), &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
+    auto r = DialogBoxParam(owner.get_instance(), MAKEINTRESOURCE(IDD_SAVE), owner.get(), &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
     switch (r) {
     case IDOK:
       return std::make_pair(IDOK, sdb.m_profileName);
@@ -1259,10 +1260,10 @@ auto make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
 
 template <typename MenuFactory>
 auto make_menu_button_handler(int id, MenuFactory f) {
-  return [id, f](Window, Window control, int, int notify) {
+  return [id, f](Window dialog, Window control, int, int notify) {
            switch (notify) {
            case BN_CLICKED: {
-             [[maybe_unused]] auto [housekeeper, menu] = f();
+             [[maybe_unused]] auto [housekeeper, menu] = f(dialog);
              show_button_menu(control, menu);
              return HandlerResult{true, TRUE};
            }
@@ -1300,7 +1301,7 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
   register_handler_map(s_handlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
   register_handler_map(s_handlerMap, ids.selectMonitor.id,
                        make_menu_button_handler(ids.selectMonitor.id,
-                                                [ids]() {
+                                                [ids](Window) {
                                                   Log::debug(TEXT("selectMonitor received"));
                                                   return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
                                                 }));
@@ -1309,16 +1310,17 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
 static void set_profile_text(Window dialog) {
   Win32::tstring buf;
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
+  auto hInst = dialog.get_instance();
 
   if (s_currentGlobalSetting.currentProfileName.empty())
-    buf = Win32::load_string(s_hInstance, IDS_NEW_PROFILE);
+    buf = Win32::load_string(hInst, IDS_NEW_PROFILE);
   else {
     buf = s_currentGlobalSetting.currentProfileName;
     ComboBox_SelectString(item.get(), -1, buf.c_str());
   }
 
   if (s_currentGlobalSetting.isCurrentProfileChanged)
-    buf += Win32::load_string(s_hInstance, IDS_CHANGED_MARK);
+    buf += Win32::load_string(hInst, IDS_CHANGED_MARK);
 
   item.set_text(buf);
 }
@@ -1366,9 +1368,10 @@ static int confirm_save(Window dialog) {
     return IDOK;
   }
   dialog.show(SW_SHOW);
+  auto hInst = dialog.get_instance();
   auto ret = open_message_box(dialog,
-                              Win32::load_string(s_hInstance, IDS_CONFIRM_SAVE).c_str(),
-                              Win32::load_string(s_hInstance, IDS_CONFIRM).c_str(),
+                              Win32::load_string(hInst, IDS_CONFIRM_SAVE).c_str(),
+                              Win32::load_string(hInst, IDS_CONFIRM).c_str(),
                               MB_YESNOCANCEL);
   switch (ret) {
   case IDYES:
@@ -1453,8 +1456,8 @@ static void update_main_controlls(Window dialog) {
   update_lock_status(dialog);
 }
 
-static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu() {
-  auto menu = Win32::load_menu(s_hInstance, MAKEINTRESOURCE(IDM_PROFILE));
+static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu(Window dialog) {
+  auto menu = Win32::load_menu(dialog.get_instance(), MAKEINTRESOURCE(IDM_PROFILE));
   auto submenu = Win32::get_sub_menu(menu, 0);
   auto const &s = s_currentGlobalSetting;
 
@@ -1496,9 +1499,9 @@ static void init_main_controlls(Window dialog) {
 
   register_handler_map(s_handlerMap, IDC_OPEN_PROFILE_MENU,
                        make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
-                                                []() {
+                                                [](Window dialog) {
                                                   Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
-                                                  return create_profile_menu();
+                                                  return create_profile_menu(dialog);
                                                 }));
   register_handler_map(s_handlerMap, IDC_LOCK,
                        [](Window) {
@@ -1544,10 +1547,11 @@ static void init_main_controlls(Window dialog) {
                          if (s.currentProfileName.empty())
                            return HandlerResult{true, TRUE};
                          TCHAR tmp[256];
-                         _stprintf(tmp, Win32::load_string(s_hInstance, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
+                         auto hInst = dialog.get_instance();
+                         _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
                          auto ret = open_message_box(dialog,
                                                      tmp,
-                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_DELETE_TITLE).c_str(),
+                                                     Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
                                                      MB_OKCANCEL);
                          switch (ret) {
                          case IDCANCEL:
@@ -1568,9 +1572,10 @@ static void init_main_controlls(Window dialog) {
                            return HandlerResult{true, TRUE};
                          }
                          auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
+                         auto hInst = dialog.get_instance();
                          auto ret = open_message_box(dialog,
-                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_INIT).c_str(),
-                                                     Win32::load_string(s_hInstance, IDS_CONFIRM_INIT_TITLE).c_str(),
+                                                     Win32::load_string(hInst, IDS_CONFIRM_INIT).c_str(),
+                                                     Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE).c_str(),
                                                      type);
                          switch (ret) {
                          case IDCANCEL:
@@ -1619,7 +1624,7 @@ static void update_target_status_text(Window dialog, const TargetStatus &ts) {
               static_cast<unsigned>(ts.window.to<LPARAM>()),
               ts.windowRect.left, ts.windowRect.top, wW, wH,
               ts.clientRect.left, ts.clientRect.top, cW, cH,
-              Win32::load_string(s_hInstance, isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
+              Win32::load_string(dialog.get_instance(), isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
   }
   dialog.get_item(IDC_TARGET_STATUS).set_text(tmp);
   s_verticalGroupBox.set_selected(isVertical);
@@ -1646,7 +1651,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     // add "quit" to system menu, individual to "close".
     HMENU hMenu = dialog.get_system_menu();
     AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
-    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(s_hInstance, IDS_QUIT).c_str());
+    AppendMenu(hMenu, MF_ENABLED | MF_STRING, IDC_QUIT, Win32::load_string(dialog.get_instance(), IDS_QUIT).c_str());
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
@@ -1848,8 +1853,6 @@ void unload_keyhook() {
 }
 
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
-  s_hInstance = hInst;
-
   if (auto w = Window::find(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); w) {
     w.post(WM_COMMAND, IDC_SHOW, 0);
     return 0;
@@ -1866,8 +1869,8 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
   register_main_dialog_class(hInst);
   s_msgTaskbarCreated = RegisterWindowMessage(TEXT("TaskbarCreated"));
 
-  Window window{CreateDialog(s_hInstance, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc)};
-  auto hAccel = LoadAccelerators(s_hInstance, MAKEINTRESOURCE(IDA_UMAPITA));
+  Window window{CreateDialog(hInst, MAKEINTRESOURCE(IDD_UMAPITA_MAIN), nullptr, &main_dialog_proc)};
+  auto hAccel = LoadAccelerators(hInst, MAKEINTRESOURCE(IDA_UMAPITA));
   MSG msg;
   while (GetMessage(&msg, nullptr, 0, 0)) {
     if (window.translate_accelerator(hAccel, &msg))
