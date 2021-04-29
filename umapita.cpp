@@ -39,8 +39,6 @@ UINT s_msgTaskbarCreated = 0;
 Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
 Monitors s_monitors;
 HFONT s_hFontMainDialog = nullptr;
-HMODULE s_hModKeyHook = nullptr;
-const KeyhookEntry *s_keyhookEntry = nullptr;
 
 //
 // 監視対象ウィンドウの状態
@@ -837,15 +835,15 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
   if (!isSettingChanged && ts == lastTargetStatus)
     return {false, {}};
 
-  if (s_keyhookEntry) {
-    bool isEn = s_keyhookEntry->is_keyhook_enabled();
+  if (KeyHook::is_available()) {
+    bool isEn = KeyHook::is_enabled();
     if (!isEn && ts.window && setting.isEnabled) {
       // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
-      auto r = s_keyhookEntry->enable_keyhook(dialog.get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
+      auto r = KeyHook::enable(dialog.get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
       Log::info(TEXT("enable_keyhook %hs"), r ? "succeeded":"failed");
     } else if (isEn && (!setting.isEnabled || !ts.window)) {
       // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
-      auto r = s_keyhookEntry->disable_keyhook();
+      auto r = KeyHook::disable();
       Log::info(TEXT("disable_keyhook %hs"), r ? "succeeded":"failed");
     }
   }
@@ -1829,36 +1827,13 @@ static void register_main_dialog_class(HINSTANCE hInst) {
   RegisterClassEx(&wc);
 }
 
-void load_keyhook() {
-  s_hModKeyHook = LoadLibrary(KEYHOOK_DLL_NAME);
-  Log::debug(TEXT("s_hModKeyHook=%p"), s_hModKeyHook);
-  if (s_hModKeyHook) {
-    auto f = reinterpret_cast<GetEntryFun>(reinterpret_cast<void *>(GetProcAddress(s_hModKeyHook, KEYHOOK_GET_ENTRY_FUN_NAME)));
-    Log::debug(TEXT("get_entry=%p"), f);
-    if (f) {
-      s_keyhookEntry = f();
-      Log::debug(TEXT("s_keyhookEntry=%p"), s_keyhookEntry);
-    }
-  }
-  if (!s_keyhookEntry) {
-    Log::info(TEXT("cannot load \"%S\""), KEYHOOK_DLL_NAME);
-  }
-}
-
-void unload_keyhook() {
-  s_keyhookEntry = nullptr;
-  if (s_hModKeyHook)
-    FreeLibrary(s_hModKeyHook);
-  s_hModKeyHook = nullptr;
-}
-
 int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow) {
   if (auto w = Window::find(TEXT(UMAPITA_MAIN_WINDOW_CLASS), nullptr); w) {
     w.post(WM_COMMAND, IDC_SHOW, 0);
     return 0;
   }
 
-  load_keyhook();
+  KeyHook::load();
 
   auto cx = GetSystemMetrics(SM_CXICON);
   auto cy = GetSystemMetrics(SM_CYICON);
@@ -1880,8 +1855,6 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
-
-  unload_keyhook();
 
   return msg.wParam;
 }
