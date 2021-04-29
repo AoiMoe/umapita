@@ -12,6 +12,41 @@ inline tstring remove_ws_on_both_ends(const tstring &src) {
   return b < e ? tstring{b, e} : tstring{};
 }
 
+namespace Bits_ {
+
+template <typename> struct StrToPtr;
+template <>
+struct StrToPtr<std::nullptr_t> {
+  static std::nullptr_t to_ptr(std::nullptr_t ptr) { return ptr; }
+};
+template <>
+struct StrToPtr<LPTSTR> {
+  static LPTSTR to_ptr(LPTSTR ptr) { return ptr; }
+};
+template <>
+struct StrToPtr<LPCTSTR> {
+  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
+};
+template <std::size_t N>
+struct StrToPtr<TCHAR [N]> {
+  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
+};
+template <std::size_t N>
+struct StrToPtr<const TCHAR [N]> {
+  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
+};
+template <>
+struct StrToPtr<tstring> {
+  static LPCTSTR to_ptr(const tstring &s) { return s.c_str(); }
+};
+
+} // namespace Bits_
+
+template <typename T>
+LPCTSTR str_to_ptr(const T &s) {
+  return Bits_::StrToPtr<T>::to_ptr(s);
+}
+
 //
 // get null-terminated string from Win32 API and return it as tstring
 //
@@ -68,6 +103,7 @@ T make_sized_pod() {
   return pod;
 }
 
+
 //
 // for RECT struct
 //
@@ -104,6 +140,177 @@ struct Win32ErrorCode : SystemErrorCode {
   explicit Win32ErrorCode(Ret, const char *msg = nullptr) : SystemErrorCode{GetLastError(), msg} { }
 };
 
+
+//
+// window handle
+//
+namespace Bits_ {
+template <typename> struct WindowConv;
+class Paint;
+} // namespace Bits_
+
+class Window {
+  HWND m_hWnd = nullptr;
+public:
+  ~Window() = default;
+  Window() = default;
+  Window(HWND w) : m_hWnd(w) { }
+  Window(const Window &) = default;
+  Window &operator = (const Window &) = default;
+  void reset() noexcept { m_hWnd = nullptr; }
+  HWND get() const noexcept { return m_hWnd; }
+  template <typename T>
+  static Window from(T v) noexcept { return Bits_::WindowConv<T>::from(v); }
+  template <typename T>
+  T to() const noexcept { return Bits_::WindowConv<T>::to(get()); }
+  explicit operator bool () const noexcept { return !!get(); }
+  tstring get_text() const {
+    return Win32::get_sz(::GetWindowTextLength(get()), [=](LPTSTR buf, std::size_t len) { ::GetWindowText(get(), buf, len+1); });
+  }
+  template <typename S>
+  void set_text(const S &text) const {
+    SetWindowText(get(), str_to_ptr(text));
+  }
+  Window get_parent() const { return GetParent(get()); }
+  RECT get_client_rect() const {
+    RECT r;
+    GetClientRect(get(), &r);
+    return r;
+  }
+  RECT get_window_rect() const {
+    RECT r;
+    GetWindowRect(get(), &r);
+    return r;
+  }
+  void invalidate_rect(const RECT &r, bool isredraw) const { InvalidateRect(get(), &r, isredraw); }
+  void update_window() const { UpdateWindow(get()); }
+  void set_foreground() const { SetForegroundWindow(get()); }
+  void enable(bool en) const { EnableWindow(get(), en); }
+  void show(int nCmdShow) const { ShowWindow(get(), nCmdShow); }
+  bool is_visible() const { return IsWindowVisible(get()); }
+  bool is_dialog_message(LPMSG msg) const { return IsDialogMessage(get(), msg); }
+  bool translate_accelerator(HACCEL hAcc, LPMSG msg) { return TranslateAccelerator(get(), hAcc, msg); }
+  void post(UINT msg, WPARAM wParam, LPARAM lParam) const{ PostMessage(get(), msg, wParam, lParam); }
+  LRESULT send(UINT msg, WPARAM wParam, LPARAM lParam) const { return SendMessage(get(), msg, wParam, lParam); }
+  void destroy() const { DestroyWindow(get()); }
+  UINT_PTR set_timer(UINT_PTR nIDEvent, UINT uElapse, TIMERPROC lpTimerFunc) const {
+    return SetTimer(get(), nIDEvent, uElapse, lpTimerFunc);
+  }
+  void kill_timer(UINT_PTR uIDEvent) const { KillTimer(get(), uIDEvent); }
+  void set_pos(Window insertAfter, int x, int y, int cx, int cy, UINT uFlags) const {
+    throw_if<Win32ErrorCode, false>(SetWindowPos(get(), insertAfter.get(), x, y, cx, cy, uFlags), "Window::set_pos");
+  }
+  template <typename S1, typename S2>
+  static Window find(const S1 &cls, const S2 &name) {
+    return FindWindow(str_to_ptr(cls), str_to_ptr(name));
+  }
+  WINDOWINFO get_info() const {
+    auto wi = make_sized_pod<WINDOWINFO>();
+    throw_if<Win32ErrorCode, false>(GetWindowInfo(get(), &wi), "Window::get_info");
+    return wi;
+  }
+  HMONITOR get_monitor(DWORD dwFlags) const { return MonitorFromWindow(get(), dwFlags); }
+  LONG_PTR get_long_ptr(int i) const { return GetWindowLongPtr(get(), i); }
+  template <typename T>
+  T get_long_ptr(int i) const { return reinterpret_cast<T>(GetWindowLongPtr(get(), i)); }
+  LONG_PTR set_long_ptr(int i, LONG_PTR v) const { return SetWindowLongPtr(get(), i, v); }
+  template <typename T>
+  T set_long_ptr(int i, T v) const { return reinterpret_cast<T>(SetWindowLongPtr(get(), i, reinterpret_cast<LONG_PTR>(v))); }
+  template <typename T>
+  T get_user_data() const { return get_long_ptr<T>(GWLP_USERDATA); }
+  template <typename T>
+  T set_user_data(T v) const { return set_long_ptr(GWLP_USERDATA, v); }
+  template <typename T>
+  T get_dialog_user_data() const { return get_long_ptr<T>(DWLP_USER); }
+  template <typename T>
+  T set_dialog_user_data(T v) const { return set_long_ptr(DWLP_USER, v); }
+  WNDPROC get_wndproc() const { return get_long_ptr<WNDPROC>(GWLP_WNDPROC); }
+  WNDPROC set_wndproc(WNDPROC p) const { return set_long_ptr(GWLP_WNDPROC, p); }
+  HINSTANCE get_instance() const { return get_long_ptr<HINSTANCE>(GWLP_HINSTANCE); }
+  template <typename S1, typename S2>
+  int message_box(const S1 &text, const S2 &caption, UINT uType) const {
+    return MessageBox(get(), str_to_ptr(text), str_to_ptr(caption), uType);
+  }
+  // XXX: dialog
+  Window get_item(int id) const {
+    return GetDlgItem(get(), id);
+  }
+  void end_dialog(INT_PTR result) const {
+    EndDialog(get(), result);
+  }
+  HMENU get_system_menu(bool bRevert = false) const {
+    return GetSystemMenu(get(), bRevert);
+  }
+  std::pair<DWORD, DWORD> get_thread_process_id() const {
+    DWORD tid, pid;
+    tid = GetWindowThreadProcessId(get(), &pid);
+    return {tid, pid};
+  }
+  Bits_::Paint begin_paint() const;
+};
+
+inline bool operator == (Window lhs, Window rhs) { return lhs.get() == rhs.get(); }
+inline bool operator != (Window lhs, Window rhs) { return !(lhs == rhs); }
+
+namespace Bits_ {
+
+template <>
+struct WindowConv<Window> {
+  static Window from(Window w) noexcept { return w; }
+  static Window to(Window w) noexcept { return w; }
+};
+template <>
+struct WindowConv<std::nullptr_t> {
+  static Window from(std::nullptr_t) noexcept { return Window{}; }
+};
+template <>
+struct WindowConv<WPARAM> {
+  static Window from(WPARAM w) noexcept { return Window{reinterpret_cast<HWND>(w)}; }
+  static WPARAM to(Window w) noexcept { return reinterpret_cast<WPARAM>(w.get()); }
+};
+template <>
+struct WindowConv<LPARAM> {
+  static Window from(LPARAM w) noexcept { return Window{reinterpret_cast<HWND>(w)}; }
+  static LPARAM to(Window w) noexcept { return reinterpret_cast<LPARAM>(w.get()); }
+};
+
+class Paint {
+  friend Window;
+  Window m_window;
+  PAINTSTRUCT m_ps;
+  Paint(Window w, const PAINTSTRUCT &ps) : m_window(w), m_ps(ps) { }
+public:
+  void reset() {
+    if (m_window)
+      EndPaint(m_window.get(), &m_ps);
+    m_window = Window{};
+  }
+  ~Paint() { reset(); }
+  Paint() = default;
+  Paint(const Paint &) = delete;
+  Paint(Paint &&rhs) {
+    *this = std::move(rhs);
+  }
+  Paint &operator = (const Paint &) = delete;
+  Paint &operator = (Paint &&rhs) {
+    reset();
+    m_window = rhs.m_window;
+    m_ps = rhs.m_ps;
+    rhs.m_window = Window{};
+    return *this;
+  }
+  Window window() const noexcept { return m_window; }
+  HDC hdc() const noexcept { return m_ps.hdc; }
+  const PAINTSTRUCT &ps() const noexcept { return m_ps; }
+};
+
+} // namespace Bits_
+
+inline Bits_::Paint Window::begin_paint() const {
+  PAINTSTRUCT ps;
+  BeginPaint(get(), &ps);
+  return Bits_::Paint{*this, ps};
+}
 
 //
 // icon
