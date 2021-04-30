@@ -975,14 +975,13 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
 }
 
 //
-// メッセージボックスをいい感じに配置する
+// オーナーウィンドウの真ん中にポップアップウィンドウを配置する
 //
-void adjust_popup(Window owner, Window target) {
-  // メインウィンドウの真ん中に配置する
+void center_popup(Window owner, Window popup) {
   auto rcOwner = owner.get_window_rect();
-  auto rcTarget = target.get_window_rect();
-  auto w = Win32::width(rcTarget);
-  auto h = Win32::height(rcTarget);
+  auto rcPopup = popup.get_window_rect();
+  auto w = Win32::width(rcPopup);
+  auto h = Win32::height(rcPopup);
   auto x = rcOwner.left + (Win32::width(rcOwner) - w)/2;
   auto y = rcOwner.top + (Win32::height(rcOwner) - h)/2;
 
@@ -999,9 +998,12 @@ void adjust_popup(Window owner, Window target) {
     y = b - h;
   }
 
-  target.set_pos(Window{}, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+  popup.set_pos(Window{}, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+//
+// メッセージボックスをオーナーの中央に開く
+//
 int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
   static Window s_owner = nullptr;
   static HHOOK s_hHook = nullptr;
@@ -1013,7 +1015,7 @@ int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
                                if (code == HCBT_ACTIVATE) {
                                  UnhookWindowsHookEx(hHook);
                                  s_hHook = nullptr;
-                                 adjust_popup(s_owner, Window::from(wParam));
+                                 center_popup(s_owner, Window::from(wParam));
                                }
                                return CallNextHookEx(hHook, code, wParam, lParam);
                              },
@@ -1068,7 +1070,7 @@ private:
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       _stprintf(buf, detail.c_str(), m_profileName.c_str());
       window.get_item(IDC_SAVE_DETAIL).set_text(buf);
-      adjust_popup(m_owner, window);
+      center_popup(m_owner, window);
       return TRUE;
     }
 
