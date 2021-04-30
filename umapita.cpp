@@ -33,9 +33,8 @@ struct Monitor {
   Win32::tstring name;
   RECT whole;
   RECT work;
-  bool isPrimary;
 public:
-  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork, bool aIsPrimary) : name{aName}, whole{aWhole}, work{aWork}, isPrimary{aIsPrimary} { }
+  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork) : name{aName}, whole{aWhole}, work{aWork} { }
 };
 using Monitors = std::vector<Monitor>;
 
@@ -740,53 +739,57 @@ static void show_popup_menu(Window window, BOOL isTray = FALSE) {
   TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
 }
 
-static CALLBACK BOOL update_monitors_callback(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
-  Monitors &ms = *reinterpret_cast<Monitors *>(lParam);
-  auto mi = Win32::make_sized_pod<MONITORINFOEX>();
-  GetMonitorInfo(hMonitor, &mi);
-  Log::debug(TEXT("hMonitor=%p, szDevice=%S, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
-             hMonitor, mi.szDevice,
-             mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
-             mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom,
-             mi.dwFlags);
-  ms.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork, !!(mi.dwFlags & MONITORINFOF_PRIMARY));
-  return TRUE;
-}
-
 static void update_monitors() {
-  Monitors ret;
-  EnumDisplayMonitors(nullptr, nullptr, &update_monitors_callback, reinterpret_cast<LPARAM>(&ret));
+  std::vector<MONITORINFOEX> mis;
 
+  EnumDisplayMonitors(nullptr, nullptr,
+                      [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) CALLBACK {
+                        auto &mis = *reinterpret_cast<std::vector<MONITORINFOEX> *>(lParam);
+                        auto mi = Win32::make_sized_pod<MONITORINFOEX>();
+                        GetMonitorInfo(hMonitor, &mi);
+                        Log::debug(TEXT("hMonitor=%p, szDevice=%S, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
+                                   hMonitor, mi.szDevice,
+                                   mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
+                                   mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom,
+                                   mi.dwFlags);
+                        mis.emplace_back(mi);
+                        return TRUE;
+                      },
+                      reinterpret_cast<LPARAM>(&mis));
+
+  Monitors ms;
+  // -1: whole virtual desktop
   RECT whole;
   whole.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
   whole.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
   whole.right = whole.left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
   whole.bottom = whole.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+  ms.emplace_back(TEXT("<all monitors>"), whole, whole);
   // 0: primary monitor
-  {
-    if (auto result = std::find_if(ret.begin(), ret.end(), [](auto const &m) { return m.isPrimary; }); result == ret.end()) {
-      // not found
-      ret.emplace(ret.begin(), TEXT("<primary>"), whole, whole, false);  // 0 番の primary は isPrimary = true とはしない。
-    } else {
-      ret.emplace(ret.begin(), TEXT("<primary>"), result->whole, result->work, false);
-    }
+  if (auto result = std::find_if(mis.begin(), mis.end(), [](auto const &mi) { return !!(mi.dwFlags & MONITORINFOF_PRIMARY); });
+      result == mis.end()) {
+    // not found
+    ms.emplace_back(TEXT("<primary>"), whole, whole);
+  } else {
+    ms.emplace_back(TEXT("<primary>"), result->rcMonitor, result->rcWork);
   }
-  // -1: whole virtual desktop
-  {
-    ret.emplace(ret.begin(), TEXT("<all monitors>"), whole, whole, false);
-  }
-  s_monitors = std::move(ret);
+  // 1-: monitors
+  for (auto &mi : mis)
+    ms.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork);
+
+  s_monitors = std::move(ms);
 }
 
-static Win32::Menu create_monitors_menu(int idbase) {
+static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
   auto menu = Win32::create_popup_menu();
   int id = idbase;
   int index = -1;
 
-  for ([[maybe_unused]] auto const &[name, whole, work, isPrimary] : s_monitors) {
+  for (auto const &[name, whole, work] : s_monitors) {
     TCHAR tmp[1024];
+    auto const &rc = isConsiderTaskbar ? work : whole;
     _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-              index++, whole.left, whole.top, whole.right, whole.bottom, name.c_str());
+              index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str());
     AppendMenu(menu.get(), MF_STRING, id++, tmp);
   }
 
@@ -1291,9 +1294,10 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
   register_handler(s_commandHandlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
   register_handler(s_commandHandlerMap, ids.selectMonitor.id,
                    make_menu_button_handler(ids.selectMonitor.id,
-                                            [ids](Window) {
+                                            [ids, &setting](Window) {
                                               Log::debug(TEXT("selectMonitor received"));
-                                              return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
+                                              return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base,
+                                                                                            setting.isConsiderTaskbar));
                                             }));
 }
 
