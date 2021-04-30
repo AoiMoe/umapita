@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "am/win32util.h"
 #include "am/win32reg.h"
+#include "am/win32handler.h"
 #include "umapita_res.h"
 #include "umapita_keyhook.h"
 
@@ -1139,12 +1140,27 @@ public:
 //
 // main dialog
 //
-using HandlerResult = std::pair<bool, INT_PTR>;
-using Handler = std::function<HandlerResult (Window, UINT, WPARAM, LPARAM)>;
-using HandlerMap = std::unordered_map<int, Handler>;
+namespace Handler = AM::Win32::Handler;
+using CommandHandlerMap = Handler::Map<int, Handler::DialogMessageTraits>;
 
+template <typename H>
+void register_handler(CommandHandlerMap &hm, int id, H h) {
+  hm.register_handler(id, h);
+}
+
+template <typename Enum, typename H>
+void register_handler(CommandHandlerMap &hm, const CheckButtonMap<Enum> &m, H h) {
+  hm.register_handler(m.id, h);
+}
+
+template <typename Enum, std::size_t Num, typename H>
+void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m, H h) {
+  for (auto const &[tag, id] : m)
+    hm.register_handler(id, h);
+}
+
+static CommandHandlerMap s_commandHandlerMap;
 static bool s_isDialogChanged = false;
-static HandlerMap s_handlerMap;
 
 template <typename Enum, std::size_t Num>
 static void set_radio_buttons(Window dialog, const RadioButtonMap<Enum, Num> &m, Enum v) {
@@ -1159,34 +1175,6 @@ static void set_radio_buttons(Window dialog, const RadioButtonMap<Enum, Num> &m,
 template <typename Enum>
 static void set_check_button(Window dialog, const CheckButtonMap<Enum> &m, Enum v) {
   Button_SetCheck(dialog.get_item(m.id).get(), m.checked == v ? BST_CHECKED : BST_UNCHECKED);
-}
-
-void register_handler_map(HandlerMap &hm, int id, Handler h) {
-  hm.emplace(id, h);
-}
-
-void register_handler_map(HandlerMap &hm, int id, std::function<HandlerResult (Window)> h) {
-  register_handler_map(hm, id, [h](Window dialog, UINT, WPARAM, LPARAM) { return h(dialog); });
-}
-
-void register_handler_map(HandlerMap &hm, int id, std::function<HandlerResult (Window, Window, int, int)> h) {
-  register_handler_map(hm, id, [h](Window dialog, UINT msg, WPARAM wParam, LPARAM lParam) {
-                                 auto id = LOWORD(wParam);
-                                 auto notify = HIWORD(wParam);
-                                 auto control = Window::from(lParam);
-                                 return h(dialog, control, id, notify);
-                               });
-}
-
-template <typename Enum, typename H>
-void register_handler_map(HandlerMap &hm, const CheckButtonMap<Enum> &m, H h) {
-  register_handler_map(hm, m.id, h);
-}
-
-template <typename Enum, std::size_t Num, typename H>
-void register_handler_map(HandlerMap &hm, const RadioButtonMap<Enum, Num> &m, H h) {
-  for (auto const &[tag, id] : m)
-    register_handler_map(hm, id, h);
 }
 
 static void set_monitor_number(Window dialog, int id, int num) {
@@ -1207,10 +1195,10 @@ static auto make_long_integer_box_handler(LONG &stor) {
                s_currentGlobalSetting.isCurrentProfileChanged = true;
                s_isDialogChanged = true;
              }
-             return HandlerResult{true, TRUE};
+             return TRUE;
            }
            }
-           return HandlerResult{true, FALSE};
+           return FALSE;
          };
 }
 
@@ -1227,10 +1215,10 @@ auto make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor, bool i
                  s_currentGlobalSetting.isCurrentProfileChanged = true;
                s_isDialogChanged = true;
              }
-             return HandlerResult{true, TRUE};
+             return TRUE;
            }
            }
-           return HandlerResult{true, FALSE};
+           return FALSE;
          };
 }
 
@@ -1245,14 +1233,14 @@ auto make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
                  stor = tag;
                  s_currentGlobalSetting.isCurrentProfileChanged = true;
                  s_isDialogChanged = true;
-                 return HandlerResult{true, TRUE};
+                 return TRUE;
                }
              }
              Log::warning(TEXT("BN_CLICKED to the unknown radio button %X is received"), cid);
-             return HandlerResult{true, FALSE};
+             return FALSE;
            }
            }
-           return HandlerResult{true, FALSE};
+           return FALSE;
          };
 }
 
@@ -1263,10 +1251,10 @@ auto make_menu_button_handler(int id, MenuFactory f) {
            case BN_CLICKED: {
              [[maybe_unused]] auto [housekeeper, menu] = f(dialog);
              show_button_menu(control, menu);
-             return HandlerResult{true, TRUE};
+             return TRUE;
            }
            }
-           return HandlerResult{true, FALSE};
+           return FALSE;
          };
 }
 
@@ -1288,21 +1276,20 @@ static void update_per_orientation_settings(Window dialog, const PerOrientationS
 }
 
 static void init_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
-
-  register_handler_map(s_handlerMap, ids.monitorNumber, make_long_integer_box_handler(setting.monitorNumber));
-  register_handler_map(s_handlerMap, ids.isConsiderTaskbar, make_check_button_handler(ids.isConsiderTaskbar, setting.isConsiderTaskbar));
-  register_handler_map(s_handlerMap, ids.windowArea, make_radio_button_map(ids.windowArea, setting.windowArea));
-  register_handler_map(s_handlerMap, ids.size, make_long_integer_box_handler(setting.size));
-  register_handler_map(s_handlerMap, ids.axis, make_radio_button_map(ids.axis, setting.axis));
-  register_handler_map(s_handlerMap, ids.origin, make_radio_button_map(ids.origin, setting.origin));
-  register_handler_map(s_handlerMap, ids.offsetX, make_long_integer_box_handler(setting.offsetX));
-  register_handler_map(s_handlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
-  register_handler_map(s_handlerMap, ids.selectMonitor.id,
-                       make_menu_button_handler(ids.selectMonitor.id,
-                                                [ids](Window) {
-                                                  Log::debug(TEXT("selectMonitor received"));
-                                                  return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
-                                                }));
+  register_handler(s_commandHandlerMap, ids.monitorNumber, make_long_integer_box_handler(setting.monitorNumber));
+  register_handler(s_commandHandlerMap, ids.isConsiderTaskbar, make_check_button_handler(ids.isConsiderTaskbar, setting.isConsiderTaskbar));
+  register_handler(s_commandHandlerMap, ids.windowArea, make_radio_button_map(ids.windowArea, setting.windowArea));
+  register_handler(s_commandHandlerMap, ids.size, make_long_integer_box_handler(setting.size));
+  register_handler(s_commandHandlerMap, ids.axis, make_radio_button_map(ids.axis, setting.axis));
+  register_handler(s_commandHandlerMap, ids.origin, make_radio_button_map(ids.origin, setting.origin));
+  register_handler(s_commandHandlerMap, ids.offsetX, make_long_integer_box_handler(setting.offsetX));
+  register_handler(s_commandHandlerMap, ids.offsetY, make_long_integer_box_handler(setting.offsetY));
+  register_handler(s_commandHandlerMap, ids.selectMonitor.id,
+                   make_menu_button_handler(ids.selectMonitor.id,
+                                            [ids](Window) {
+                                              Log::debug(TEXT("selectMonitor received"));
+                                              return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base));
+                                            }));
 }
 
 static void set_profile_text(Window dialog) {
@@ -1404,20 +1391,20 @@ static void init_profile(Window dialog) {
   GetComboBoxInfo(item.get(), &cbi);
   Edit_SetReadOnly(cbi.hwndItem, true);
 
-  register_handler_map(s_handlerMap, IDC_SELECT_PROFILE,
-                       [](Window dialog, Window control, int, int notify) {
-                         switch (notify) {
-                         case CBN_SELCHANGE:
-                           dialog.post(WM_CHANGE_PROFILE, 0, control.to<LPARAM>());
-                           return HandlerResult{true, TRUE};
-                         case CBN_SETFOCUS:
-                         case CBN_CLOSEUP:
-                           //テキストがセレクトされるのがうっとうしいのでクリアする
-                           control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
-                           return HandlerResult{true, TRUE};
-                         }
-                         return HandlerResult{true, FALSE};
-                       });
+  register_handler(s_commandHandlerMap, IDC_SELECT_PROFILE,
+                   [](Window dialog, Window control, int, int notify) {
+                     switch (notify) {
+                     case CBN_SELCHANGE:
+                       dialog.post(WM_CHANGE_PROFILE, 0, control.to<LPARAM>());
+                       return TRUE;
+                     case CBN_SETFOCUS:
+                     case CBN_CLOSEUP:
+                       //テキストがセレクトされるのがうっとうしいのでクリアする
+                       control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+                       return TRUE;
+                     }
+                     return FALSE;
+                   });
 }
 
 template <typename Enum, std::size_t Num>
@@ -1488,120 +1475,120 @@ static void init_main_controlls(Window dialog) {
   auto &setting = s_currentGlobalSetting;
   {
     static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
-    register_handler_map(s_handlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled, true));
+    register_handler(s_commandHandlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled, true));
   }
 
   init_profile(dialog);
   init_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
   init_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
 
-  register_handler_map(s_handlerMap, IDC_OPEN_PROFILE_MENU,
-                       make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
-                                                [](Window dialog) {
-                                                  Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
-                                                  return create_profile_menu(dialog);
-                                                }));
-  register_handler_map(s_handlerMap, IDC_LOCK,
-                       [](Window) {
-                         Log::debug(TEXT("IDC_LOCK received"));
-                         s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
-                         s_currentGlobalSetting.isCurrentProfileChanged = true;
-                         s_isDialogChanged = true;
-                         return HandlerResult{true, TRUE};
-                       });
-  register_handler_map(s_handlerMap, IDC_SAVE,
-                       [](Window dialog) {
-                         save(dialog);
-                         update_profile(dialog);
-                         return HandlerResult{true, TRUE};
-                       });
-  register_handler_map(s_handlerMap, IDC_SAVE_AS,
-                       [](Window dialog) {
-                         save_as(dialog);
-                         update_profile(dialog);
-                         return HandlerResult{true, TRUE};
-                       });
-  register_handler_map(s_handlerMap, IDC_RENAME,
-                       [](Window dialog) {
-                         auto &s = s_currentGlobalSetting;
-                         auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.currentProfileName.c_str());
-                         if (ret == IDCANCEL) {
-                           Log::debug(TEXT("rename: canceled"));
-                           return HandlerResult{true, TRUE};
-                         }
-                         if (newProfileName == s.currentProfileName) {
-                           Log::debug(TEXT("rename: not changed"));
-                           return HandlerResult{true, TRUE};
-                         }
-                         delete_profile(newProfileName.c_str());
-                         rename_profile(s.currentProfileName.c_str(), newProfileName.c_str());
-                         s.currentProfileName = newProfileName;
-                         update_profile(dialog);
-                         return HandlerResult{true, TRUE};
-                       });
-  register_handler_map(s_handlerMap, IDC_DELETE,
-                       [](Window dialog) {
-                         auto &s = s_currentGlobalSetting;
-                         if (s.currentProfileName.empty())
-                           return HandlerResult{true, TRUE};
-                         TCHAR tmp[256];
-                         auto hInst = dialog.get_instance();
-                         _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
-                         auto ret = open_message_box(dialog,
-                                                     tmp,
-                                                     Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
-                                                     MB_OKCANCEL);
-                         switch (ret) {
-                         case IDCANCEL:
-                           return HandlerResult{true, TRUE};
-                         }
-                         delete_profile(s.currentProfileName.c_str());
-                         s.currentProfileName = TEXT("");
-                         s_isDialogChanged = true;
-                         update_main_controlls(dialog);
-                         return HandlerResult{true, TRUE};
-                       });
+  register_handler(s_commandHandlerMap, IDC_OPEN_PROFILE_MENU,
+                   make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
+                                            [](Window dialog) {
+                                              Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
+                                              return create_profile_menu(dialog);
+                                            }));
+  register_handler(s_commandHandlerMap, IDC_LOCK,
+                   [](Window) {
+                     Log::debug(TEXT("IDC_LOCK received"));
+                     s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
+                     s_currentGlobalSetting.isCurrentProfileChanged = true;
+                     s_isDialogChanged = true;
+                     return TRUE;
+                   });
+  register_handler(s_commandHandlerMap, IDC_SAVE,
+                   [](Window dialog) {
+                     save(dialog);
+                     update_profile(dialog);
+                     return TRUE;
+                   });
+  register_handler(s_commandHandlerMap, IDC_SAVE_AS,
+                   [](Window dialog) {
+                     save_as(dialog);
+                     update_profile(dialog);
+                     return TRUE;
+                   });
+  register_handler(s_commandHandlerMap, IDC_RENAME,
+                   [](Window dialog) {
+                     auto &s = s_currentGlobalSetting;
+                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.currentProfileName.c_str());
+                     if (ret == IDCANCEL) {
+                       Log::debug(TEXT("rename: canceled"));
+                       return TRUE;
+                     }
+                     if (newProfileName == s.currentProfileName) {
+                       Log::debug(TEXT("rename: not changed"));
+                       return TRUE;
+                     }
+                     delete_profile(newProfileName.c_str());
+                     rename_profile(s.currentProfileName.c_str(), newProfileName.c_str());
+                     s.currentProfileName = newProfileName;
+                     update_profile(dialog);
+                     return TRUE;
+                   });
+  register_handler(s_commandHandlerMap, IDC_DELETE,
+                   [](Window dialog) {
+                     auto &s = s_currentGlobalSetting;
+                     if (s.currentProfileName.empty())
+                       return TRUE;
+                     TCHAR tmp[256];
+                     auto hInst = dialog.get_instance();
+                     _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
+                     auto ret = open_message_box(dialog,
+                                                 tmp,
+                                                 Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
+                                                 MB_OKCANCEL);
+                     switch (ret) {
+                     case IDCANCEL:
+                       return TRUE;
+                     }
+                     delete_profile(s.currentProfileName.c_str());
+                     s.currentProfileName = TEXT("");
+                     s_isDialogChanged = true;
+                     update_main_controlls(dialog);
+                     return TRUE;
+                   });
 
-  register_handler_map(s_handlerMap, IDC_NEW,
-                       [](Window dialog) {
-                         auto &s = s_currentGlobalSetting;
-                         if (s.currentProfileName.empty() && !s.isCurrentProfileChanged) {
-                           Log::debug(TEXT("unnecessary to do"));
-                           return HandlerResult{true, TRUE};
-                         }
-                         auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
-                         auto hInst = dialog.get_instance();
-                         auto ret = open_message_box(dialog,
-                                                     Win32::load_string(hInst, IDS_CONFIRM_INIT).c_str(),
-                                                     Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE).c_str(),
-                                                     type);
-                         switch (ret) {
+  register_handler(s_commandHandlerMap, IDC_NEW,
+                   [](Window dialog) {
+                     auto &s = s_currentGlobalSetting;
+                     if (s.currentProfileName.empty() && !s.isCurrentProfileChanged) {
+                       Log::debug(TEXT("unnecessary to do"));
+                       return TRUE;
+                     }
+                     auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
+                     auto hInst = dialog.get_instance();
+                     auto ret = open_message_box(dialog,
+                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT).c_str(),
+                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE).c_str(),
+                                                 type);
+                     switch (ret) {
+                     case IDCANCEL:
+                       return TRUE;
+                     case IDYES:
+                       break;
+                     case IDNO:
+                       if (s.isCurrentProfileChanged) {
+                         switch (confirm_save(dialog)) {
                          case IDCANCEL:
-                           return HandlerResult{true, TRUE};
-                         case IDYES:
-                           break;
-                         case IDNO:
-                           if (s.isCurrentProfileChanged) {
-                             switch (confirm_save(dialog)) {
-                             case IDCANCEL:
-                               return HandlerResult{true, TRUE};
-                             }
-                           }
-                           s.currentProfile = DEFAULT_SETTING;
-                           s.isCurrentProfileChanged = false;
-                           break;
+                           return TRUE;
                          }
-                         s.currentProfileName = TEXT("");
-                         s_isDialogChanged = true;
-                         update_main_controlls(dialog);
-                         return HandlerResult{true, TRUE};
-                       });
+                       }
+                       s.currentProfile = DEFAULT_SETTING;
+                       s.isCurrentProfileChanged = false;
+                       break;
+                     }
+                     s.currentProfileName = TEXT("");
+                     s_isDialogChanged = true;
+                     update_main_controlls(dialog);
+                     return TRUE;
+                   });
   for (int id=IDC_SEL_BEGIN; id<=IDC_SEL_END; id++)
-    register_handler_map(s_handlerMap, id,
-                         [](Window dialog, Window /*control*/, int id, int /*notify*/) {
-                           select_profile(dialog, id-IDC_SEL_BEGIN);
-                           return HandlerResult{true, TRUE};
-                         });
+    register_handler(s_commandHandlerMap, id,
+                     [](Window dialog, Window /*control*/, int id, int /*notify*/) {
+                       select_profile(dialog, id-IDC_SEL_BEGIN);
+                       return TRUE;
+                     });
 
   update_main_controlls(dialog);
 }
@@ -1655,39 +1642,39 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     //
     s_currentGlobalSetting = load_global_setting();
     init_main_controlls(dialog);
-    register_handler_map(s_handlerMap, IDC_HIDE,
-                         [](Window dialog) {
-                           Log::debug(TEXT("IDC_HIDE received"));
-                           dialog.show(SW_HIDE);
-                           return HandlerResult{true, TRUE};
-                         });
-    register_handler_map(s_handlerMap, IDC_QUIT,
-                         [](Window dialog) {
-                           Log::debug(TEXT("IDC_QUIT received"));
-                           save_global_setting(s_currentGlobalSetting);
-                           delete_tasktray_icon(dialog);
-                           dialog.kill_timer(TIMER_ID);
-                           dialog.destroy();
-                           return HandlerResult{true, TRUE};
-                         });
-    register_handler_map(s_handlerMap, IDC_SHOW,
-                         [](Window dialog) {
-                           Log::debug(TEXT("IDC_SHOW received"));
-                           dialog.show(SW_SHOW);
-                           dialog.set_foreground();
-                           return HandlerResult{true, TRUE};
-                         });
+    register_handler(s_commandHandlerMap, IDC_HIDE,
+                     [](Window dialog) {
+                       Log::debug(TEXT("IDC_HIDE received"));
+                       dialog.show(SW_HIDE);
+                       return TRUE;
+                     });
+    register_handler(s_commandHandlerMap, IDC_QUIT,
+                     [](Window dialog) {
+                       Log::debug(TEXT("IDC_QUIT received"));
+                       save_global_setting(s_currentGlobalSetting);
+                       delete_tasktray_icon(dialog);
+                       dialog.kill_timer(TIMER_ID);
+                       dialog.destroy();
+                       return TRUE;
+                     });
+    register_handler(s_commandHandlerMap, IDC_SHOW,
+                     [](Window dialog) {
+                       Log::debug(TEXT("IDC_SHOW received"));
+                       dialog.show(SW_SHOW);
+                       dialog.set_foreground();
+                       return TRUE;
+                     });
     for (auto i=0; i<MAX_AVAILABLE_MONITORS+2; i++) {
-      register_handler_map(s_handlerMap, IDM_V_MONITOR_BASE+i,
-                           [](Window dialog, Window, int id, int) {
-                             set_monitor_number(dialog, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
-                             return HandlerResult{true, TRUE};
-                           });
-      register_handler_map(s_handlerMap, IDM_H_MONITOR_BASE+i,
-                           [](Window dialog, Window, int id, int) {
-                             set_monitor_number(dialog, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
-                             return HandlerResult{true, TRUE};
-                           });
+      register_handler(s_commandHandlerMap, IDM_V_MONITOR_BASE+i,
+                       [](Window dialog, Window, int id, int) {
+                         set_monitor_number(dialog, IDC_V_MONITOR_NUMBER, id - IDM_V_MONITOR_BASE - 1);
+                         return TRUE;
+                       });
+      register_handler(s_commandHandlerMap, IDM_H_MONITOR_BASE+i,
+                       [](Window dialog, Window, int id, int) {
+                         set_monitor_number(dialog, IDC_H_MONITOR_NUMBER, id - IDM_H_MONITOR_BASE - 1);
+                         return TRUE;
+                       });
     }
     add_tasktray_icon(dialog, s_appIconSm.get());
     dialog.post(WM_TIMER, TIMER_ID, 0);
@@ -1732,13 +1719,8 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     }
     return FALSE;
 
-  case WM_COMMAND: {
-    UINT id = LOWORD(wParam);
-    if (auto i = s_handlerMap.find(static_cast<int>(id)); i != s_handlerMap.end())
-      if (auto ret = i->second(dialog, msg, wParam, lParam); ret.first)
-        return ret.second;
-    return FALSE;
-  }
+  case WM_COMMAND:
+    return s_commandHandlerMap.invoke(LOWORD(wParam), dialog, msg, wParam, lParam);
 
   case WM_RBUTTONDOWN:
     show_popup_menu(dialog);
