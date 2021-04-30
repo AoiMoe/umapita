@@ -5,6 +5,9 @@
 #include "umapita_res.h"
 #include "umapita_keyhook.h"
 
+// XXX: __declspec(thread)
+#define TLSSpec __thread
+
 namespace Win32 = AM::Win32;
 using AM::Log;
 using Win32::Window;
@@ -1005,8 +1008,8 @@ void center_popup(Window owner, Window popup) {
 // メッセージボックスをオーナーの中央に開く
 //
 int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
-  static Window s_owner = nullptr;
-  static HHOOK s_hHook = nullptr;
+  static TLSSpec Window s_owner;
+  static TLSSpec HHOOK s_hHook = nullptr;
 
   s_owner = owner;
   s_hHook = SetWindowsHookEx(WH_CBT,
