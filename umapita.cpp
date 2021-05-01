@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "am/win32util.h"
 #include "am/win32reg.h"
+#include "am/win32reg_mapper.h"
 #include "am/win32handler.h"
 #include "umapita_res.h"
 #include "umapita_keyhook.h"
@@ -91,14 +92,27 @@ struct Setting {
 constexpr Setting DEFAULT_SETTING{};
 
 template <typename StringType>
-struct GlobalSettingT {
+struct GlobalCommonSettingT {
   bool isEnabled = true;
   bool isCurrentProfileChanged = false;
   StringType currentProfileName{TEXT("")};  // XXX: gcc10 の libstdc++ でも basic_string は constexpr 化されてない
+  template <typename T>
+  GlobalCommonSettingT<T> clone() const {
+    return GlobalCommonSettingT<T>{isEnabled, isCurrentProfileChanged, currentProfileName};
+  }
+};
+using GlobalCommonSetting = GlobalCommonSettingT<Win32::tstring>;
+
+constexpr GlobalCommonSettingT<LPCTSTR> DEFAULT_GLOBAL_COMMON_SETTING{};
+
+
+template <typename StringType>
+struct GlobalSettingT {
+  GlobalCommonSettingT<StringType> common{DEFAULT_GLOBAL_COMMON_SETTING};
   Setting currentProfile{DEFAULT_SETTING};
   template <typename T>
   GlobalSettingT<T> clone() const {
-    return GlobalSettingT<T>{isEnabled, isCurrentProfileChanged, currentProfileName, currentProfile};
+    return GlobalSettingT<T>{common.template clone<T>(), currentProfile};
   }
 };
 using GlobalSetting = GlobalSettingT<Win32::tstring>;
@@ -302,191 +316,69 @@ CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 //
 // レジストリ
 //
+namespace RegDef {
+using namespace AM::Win32::RegMapper;
+constexpr auto ENUM_WINDOW_AREA =
+    make_enum_tag_map(
+      make_enum_tag(TEXT("Whole"), PerOrientationSetting::Whole),
+      make_enum_tag(TEXT("Client"), PerOrientationSetting::Client));
 
-template <typename Map>
-struct RegMap {
-  using ValueType = typename Map::ValueType;
-  using DefaultValueType = typename Map::DefaultValueType;
-  LPCTSTR name;
-  Map typeMap;
-  DefaultValueType defaultValue;
-};
+constexpr auto ENUM_SIZE_AXIS =
+    make_enum_tag_map(
+      make_enum_tag(TEXT("Width"), PerOrientationSetting::Width),
+      make_enum_tag(TEXT("Height"), PerOrientationSetting::Height));
 
-template <typename Enum, std::size_t Num>
-struct RegEnumMap {
-  using ValueType = Enum;
-  using DefaultValueType = Enum;
-  std::array<std::pair<LPCTSTR, Enum>, Num> enumMap;
-};
+constexpr auto ENUM_ORIGIN =
+    make_enum_tag_map(
+      make_enum_tag(TEXT("N"), PerOrientationSetting::N),
+      make_enum_tag(TEXT("S"), PerOrientationSetting::S),
+      make_enum_tag(TEXT("W"), PerOrientationSetting::W),
+      make_enum_tag(TEXT("E"), PerOrientationSetting::E),
+      make_enum_tag(TEXT("NW"), PerOrientationSetting::NW),
+      make_enum_tag(TEXT("NE"), PerOrientationSetting::NE),
+      make_enum_tag(TEXT("SW"), PerOrientationSetting::SW),
+      make_enum_tag(TEXT("SE"), PerOrientationSetting::SE));
 
-struct RegBoolMap {
-  using ValueType = bool;
-  using DefaultValueType = bool;
-};
+constexpr auto PER_PROFILE_SETTING_DEF =
+    make_composite_value_def<Setting>(
+      make_bool(TEXT("isLocked"), &Setting::isLocked, DEFAULT_SETTING.isLocked),
+      make_recurse(
+        &Setting::verticalSetting,
+        make_s32(TEXT("vMonitorNumber"), &PerOrientationSetting::monitorNumber, DEFAULT_SETTING.verticalSetting.monitorNumber),
+        make_bool(TEXT("vIsConsiderTaskbar"), &PerOrientationSetting::isConsiderTaskbar, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar),
+        make_enum(TEXT("vWindowArea"), &PerOrientationSetting::windowArea, DEFAULT_SETTING.verticalSetting.windowArea, ENUM_WINDOW_AREA),
+        make_s32(TEXT("vSize"), &PerOrientationSetting::size, DEFAULT_SETTING.verticalSetting.size),
+        make_enum(TEXT("vSizeAxis"), &PerOrientationSetting::axis, DEFAULT_SETTING.verticalSetting.axis, ENUM_SIZE_AXIS),
+        make_enum(TEXT("vOrigin"), &PerOrientationSetting::origin, DEFAULT_SETTING.verticalSetting.origin, ENUM_ORIGIN),
+        make_s32(TEXT("vOffsetX"), &PerOrientationSetting::offsetX, DEFAULT_SETTING.verticalSetting.offsetX),
+        make_s32(TEXT("vOffsetY"), &PerOrientationSetting::offsetY, DEFAULT_SETTING.verticalSetting.offsetY),
+        make_s32(TEXT("vAspectX"), &PerOrientationSetting::aspectX, DEFAULT_SETTING.verticalSetting.aspectX),
+        make_s32(TEXT("vAspectY"), &PerOrientationSetting::aspectY, DEFAULT_SETTING.verticalSetting.aspectY)),
+      make_recurse(
+        &Setting::horizontalSetting,
+        make_s32(TEXT("hMonitorNumber"), &PerOrientationSetting::monitorNumber, DEFAULT_SETTING.verticalSetting.monitorNumber),
+        make_bool(TEXT("hIsConsiderTaskbar"), &PerOrientationSetting::isConsiderTaskbar, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar),
+        make_enum(TEXT("hWindowArea"), &PerOrientationSetting::windowArea, DEFAULT_SETTING.verticalSetting.windowArea, ENUM_WINDOW_AREA),
+        make_s32(TEXT("hSize"), &PerOrientationSetting::size, DEFAULT_SETTING.verticalSetting.size),
+        make_enum(TEXT("hSizeAxis"), &PerOrientationSetting::axis, DEFAULT_SETTING.verticalSetting.axis, ENUM_SIZE_AXIS),
+        make_enum(TEXT("hOrigin"), &PerOrientationSetting::origin, DEFAULT_SETTING.verticalSetting.origin, ENUM_ORIGIN),
+        make_s32(TEXT("hOffsetX"), &PerOrientationSetting::offsetX, DEFAULT_SETTING.verticalSetting.offsetX),
+        make_s32(TEXT("hOffsetY"), &PerOrientationSetting::offsetY, DEFAULT_SETTING.verticalSetting.offsetY),
+        make_s32(TEXT("hAspectX"), &PerOrientationSetting::aspectX, DEFAULT_SETTING.verticalSetting.aspectX),
+        make_s32(TEXT("hAspectY"), &PerOrientationSetting::aspectY, DEFAULT_SETTING.verticalSetting.aspectY)));
 
-struct RegLongMap {
-  using ValueType = LONG;
-  using DefaultValueType = LONG;
-};
-
-struct RegStringMap {
-  using ValueType = Win32::tstring;
-  using DefaultValueType = LPCTSTR;
-};
-
-struct PerOrientationSettingRegMap {
-  using WindowAreaMap = RegEnumMap<PerOrientationSetting::WindowArea, 2>;
-  constexpr static WindowAreaMap WindowArea = {{{
-        {TEXT("Whole"), PerOrientationSetting::Whole},
-        {TEXT("Client"), PerOrientationSetting::Client},
-      }}};
-  using SizeAxisMap = RegEnumMap<PerOrientationSetting::SizeAxis, 2>;
-  constexpr static SizeAxisMap SizeAxis = {{{
-        {TEXT("Width"), PerOrientationSetting::Width},
-        {TEXT("Height"), PerOrientationSetting::Height},
-      }}};
-  using OriginMap = RegEnumMap<PerOrientationSetting::Origin, 9>;
-  constexpr static OriginMap Origin = {{{
-        {TEXT("N"), PerOrientationSetting::N},
-        {TEXT("S"), PerOrientationSetting::S},
-        {TEXT("W"), PerOrientationSetting::W},
-        {TEXT("E"), PerOrientationSetting::E},
-        {TEXT("NW"), PerOrientationSetting::NW},
-        {TEXT("NE"), PerOrientationSetting::NE},
-        {TEXT("SW"), PerOrientationSetting::SW},
-        {TEXT("SE"), PerOrientationSetting::SE},
-      }}};
-  //
-  RegMap<RegLongMap> monitorNumber;
-  RegMap<RegBoolMap> isConsiderTaskbar;
-  RegMap<WindowAreaMap> windowArea;
-  RegMap<RegLongMap> size;
-  RegMap<SizeAxisMap> axis;
-  RegMap<OriginMap> origin;
-  RegMap<RegLongMap> offsetX;
-  RegMap<RegLongMap> offsetY;
-  RegMap<RegLongMap> aspectX;
-  RegMap<RegLongMap> aspectY;
-};
-
-constexpr PerOrientationSettingRegMap REGMAP_VERTICAL_SETTING = {
-  {TEXT("vMonitorNumber"), {}, DEFAULT_SETTING.verticalSetting.monitorNumber},
-  {TEXT("vIsConsiderTaskbar"), {}, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar},
-  {TEXT("vWindowArea"), PerOrientationSettingRegMap::WindowArea, DEFAULT_SETTING.verticalSetting.windowArea},
-  {TEXT("vSize"), {}, DEFAULT_SETTING.verticalSetting.size},
-  {TEXT("vSizeAxis"), PerOrientationSettingRegMap::SizeAxis, DEFAULT_SETTING.verticalSetting.axis},
-  {TEXT("vOrigin"), PerOrientationSettingRegMap::Origin, DEFAULT_SETTING.verticalSetting.origin},
-  {TEXT("vOffsetX"), {}, DEFAULT_SETTING.verticalSetting.offsetX},
-  {TEXT("vOffsetY"), {}, DEFAULT_SETTING.verticalSetting.offsetY},
-  {TEXT("vAspectX"), {}, DEFAULT_SETTING.verticalSetting.aspectX},
-  {TEXT("vAspectY"), {}, DEFAULT_SETTING.verticalSetting.aspectY},
-};
-
-constexpr PerOrientationSettingRegMap REGMAP_HORIZONTAL_SETTING = {
-  {TEXT("hMonitorNumber"), {}, DEFAULT_SETTING.horizontalSetting.monitorNumber},
-  {TEXT("hIsConsiderTaskbar"), {}, DEFAULT_SETTING.horizontalSetting.isConsiderTaskbar},
-  {TEXT("hWindowArea"), PerOrientationSettingRegMap::WindowArea, DEFAULT_SETTING.horizontalSetting.windowArea},
-  {TEXT("hSize"), {}, DEFAULT_SETTING.horizontalSetting.size},
-  {TEXT("hSizeAxis"), PerOrientationSettingRegMap::SizeAxis, DEFAULT_SETTING.horizontalSetting.axis},
-  {TEXT("hOrigin"), PerOrientationSettingRegMap::Origin, DEFAULT_SETTING.horizontalSetting.origin},
-  {TEXT("hOffsetX"), {}, DEFAULT_SETTING.horizontalSetting.offsetX},
-  {TEXT("hOffsetY"), {}, DEFAULT_SETTING.horizontalSetting.offsetY},
-  {TEXT("hAspectX"), {}, DEFAULT_SETTING.horizontalSetting.aspectX},
-  {TEXT("hAspectY"), {}, DEFAULT_SETTING.horizontalSetting.aspectY},
-};
-
-constexpr RegMap<RegBoolMap> REGMAP_IS_LOCKED = {TEXT("isLocked"), RegBoolMap{}, DEFAULT_SETTING.isLocked};
-constexpr RegMap<RegBoolMap> REGMAP_IS_ENABLED = {TEXT("isEnabled"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isEnabled};
-constexpr RegMap<RegBoolMap> REGMAP_IS_CURRENT_PROFILE_CHANGED = {TEXT("isCurrentProfileChanged"), RegBoolMap{}, DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged};
-constexpr RegMap<RegStringMap> REGMAP_CURRENT_PROFILE_NAME = {TEXT("currentProfileName"), RegStringMap{}, DEFAULT_GLOBAL_SETTING.currentProfileName};
-
-
-struct RegGetFailed : AM::RuntimeError<RegGetFailed> { };
-
-inline bool reg_get_(const Win32::Reg::Key &key, const RegMap<RegBoolMap> &m) {
-  bool v = !!Win32::Reg::query_dword(key, m.name);
-  Log::debug(TEXT("reg_get: %S -> %hs"), m.name, v ? "true":"false");
-  return v;
-}
-
-inline LONG reg_get_(const Win32::Reg::Key &key, const RegMap<RegLongMap> &m) {
-  LONG v = static_cast<INT32>(Win32::Reg::query_dword(key, m.name));
-  Log::debug(TEXT("reg_get: %S -> %ld"), m.name, v);
-  return v;
-}
-
-template <class Enum, std::size_t Num>
-Enum reg_get_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, Num>> &m) {
-  auto str = Win32::Reg::query_sz(key, m.name);
-  Log::debug(TEXT("reg_get: %S -> %S"), m.name, str.c_str());
-  for (auto [t, v] : m.typeMap.enumMap) {
-    if (str == t)
-      return v;
-  }
-  Log::error(TEXT("unknown enum tag in \"%S\": %S"), m.name, str.c_str());
-  throw RegGetFailed{};
-}
-
-inline Win32::tstring reg_get_(const Win32::Reg::Key &key, const RegMap<RegStringMap> &m) {
-  auto str = Win32::Reg::query_sz(key, m.name);
-  Log::debug(TEXT("reg_get: %S -> %S"), m.name, str.c_str());
-  return str;
-}
-
-template <class T>
-auto reg_get(const Win32::Reg::Key &key, const RegMap<T> &m) {
-  try {
-    return reg_get_(key, m);
-  }
-  catch (Win32::Reg::ErrorCode &ex) {
-    if (ex.code == ERROR_FILE_NOT_FOUND) {
-      Log::warning(TEXT("\"%S\" is not found - use default value"), m.name);
-      return typename T::ValueType{m.defaultValue};
-    }
-    Log::error(TEXT("cannot get \"%S\" value: %hs(%d)"), m.name, ex.what(), ex.code);
-    throw RegGetFailed{};
-  }
-}
-
-struct RegPutFailed : AM::RuntimeError<RegGetFailed> { };
-
-inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegBoolMap> &m, bool v) {
-  Log::debug(TEXT("reg_put: %S -> %hs"), m.name, v ? "true":"false");
-  Win32::Reg::set_dword(key, m.name, static_cast<DWORD>(v));
-}
-
-inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegLongMap> &m, LONG v) {
-  Log::debug(TEXT("reg_put: %S -> %ld"), m.name, v);
-  Win32::Reg::set_dword(key, m.name, static_cast<DWORD>(v));
-}
-
-template <class Enum, std::size_t Num>
-inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegEnumMap<Enum, Num>> &m, Enum v) {
-  LPCTSTR tag = [&m,v]() {
-                  for (auto [t, x] : m.typeMap.enumMap) {
-                    if (v == x)
-                      return t;
-                  }
-                  throw RegPutFailed{};
-                }();
-  Log::debug(TEXT("reg_put: %S -> %S"), m.name, tag);
-  Win32::Reg::set_sz(key, m.name, tag);
-}
-
-inline void reg_put_(const Win32::Reg::Key &key, const RegMap<RegStringMap> &m, const Win32::tstring &v) {
-  Win32::Reg::set_sz(key, m.name, v.c_str());
-}
-
-template <class T, class V>
-auto reg_put(const Win32::Reg::Key &key, const RegMap<T> &m, const V &v) {
-  try {
-    return reg_put_(key, m, v);
-  }
-  catch (Win32::Reg::ErrorCode &ex) {
-    Log::error(TEXT("cannot put \"%S\" value: %hs(%d)"), m.name, ex.what(), ex.code);
-    throw RegPutFailed{};
-  }
-}
+constexpr auto GLOBAL_SETTING_DEF =
+    make_composite_value_def<GlobalCommonSetting>(
+      make_bool(TEXT("isEnabled"),
+                           &GlobalCommonSetting::isEnabled,
+                           DEFAULT_GLOBAL_COMMON_SETTING.isEnabled),
+      make_bool(TEXT("isCurrentProfileChanged"),
+                           &GlobalCommonSetting::isCurrentProfileChanged,
+                           DEFAULT_GLOBAL_COMMON_SETTING.isCurrentProfileChanged),
+      make_string(TEXT("currentProfileName"),
+                             &GlobalCommonSetting::currentProfileName,
+                             DEFAULT_GLOBAL_COMMON_SETTING.currentProfileName));
+} // RegDef
 
 inline Win32::tstring encode_profile_name(LPCTSTR src) {
   Win32::tstring ret;
@@ -541,47 +433,15 @@ inline Win32::tstring make_regpath(LPCTSTR profileName) {
   return tmp;
 }
 
-inline PerOrientationSetting reg_get_per_orientation_setting(const Win32::Reg::Key &key, PerOrientationSettingRegMap m) {
-  return PerOrientationSetting{
-    reg_get(key, m.monitorNumber),
-    reg_get(key, m.isConsiderTaskbar),
-    reg_get(key, m.windowArea),
-    reg_get(key, m.size),
-    reg_get(key, m.axis),
-    reg_get(key, m.origin),
-    reg_get(key, m.offsetX),
-    reg_get(key, m.offsetY),
-    reg_get(key, m.aspectX),
-    reg_get(key, m.aspectY),
-  };
-}
-
-inline void reg_put_per_orientation_setting(const Win32::Reg::Key &key, PerOrientationSettingRegMap m, const PerOrientationSetting s) {
-  reg_put(key, m.monitorNumber, s.monitorNumber);
-  reg_put(key, m.isConsiderTaskbar, s.isConsiderTaskbar);
-  reg_put(key, m.windowArea, s.windowArea);
-  reg_put(key, m.size, s.size);
-  reg_put(key, m.axis, s.axis);
-  reg_put(key, m.origin, s.origin);
-  reg_put(key, m.offsetX, s.offsetX);
-  reg_put(key, m.offsetY, s.offsetY);
-  reg_put(key, m.aspectX, s.aspectX);
-  reg_put(key, m.aspectY, s.aspectY);
-}
-
 static Setting load_setting(LPCTSTR profileName) {
   auto path = make_regpath(profileName);
 
   try {
     auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
     try {
-      return Setting{
-        reg_get(key, REGMAP_IS_LOCKED),
-        reg_get_per_orientation_setting(key, REGMAP_VERTICAL_SETTING),
-        reg_get_per_orientation_setting(key, REGMAP_HORIZONTAL_SETTING),
-      };
+      return RegDef::PER_PROFILE_SETTING_DEF.get(key);
     }
-    catch (RegGetFailed &) {
+    catch (Win32::RegMapper::GetFailed &) {
       return DEFAULT_SETTING;
     }
   }
@@ -597,11 +457,9 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   try {
     [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, REGMAP_IS_LOCKED, s.isLocked);
-      reg_put_per_orientation_setting(key, REGMAP_VERTICAL_SETTING, s.verticalSetting);
-      reg_put_per_orientation_setting(key, REGMAP_HORIZONTAL_SETTING, s.horizontalSetting);
+      RegDef::PER_PROFILE_SETTING_DEF.put(key, s);
     }
-    catch (RegPutFailed &) {
+    catch (Win32::RegMapper::PutFailed &) {
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
@@ -610,24 +468,24 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
 }
 
 static GlobalSetting load_global_setting() {
-  auto path = make_regpath(nullptr);
-  auto isEnabled = DEFAULT_GLOBAL_SETTING.isEnabled;
-  auto isCurrentProfileChanged = DEFAULT_GLOBAL_SETTING.isCurrentProfileChanged;
-  Win32::tstring currentProfileName = DEFAULT_GLOBAL_SETTING.currentProfileName;
-  try {
-    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
-    try {
-      isEnabled = reg_get(key, REGMAP_IS_ENABLED);
-      isCurrentProfileChanged = reg_get(key, REGMAP_IS_CURRENT_PROFILE_CHANGED);
-      currentProfileName = reg_get(key, REGMAP_CURRENT_PROFILE_NAME);
-    }
-    catch (RegGetFailed &) {
-    }
-  }
-  catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
-  }
-  return GlobalSetting{isEnabled, isCurrentProfileChanged, currentProfileName, load_setting(nullptr)};
+  auto load_common =
+      []() {
+        auto path = make_regpath(nullptr);
+        try {
+          auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+          try {
+            return RegDef::GLOBAL_SETTING_DEF.get(key);
+          }
+          catch (Win32::RegMapper::GetFailed &) {
+            return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
+          }
+        }
+        catch (Win32::Reg::ErrorCode &ex) {
+          Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+          return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
+        }
+      };
+  return GlobalSetting{load_common(), load_setting(nullptr)};
 }
 
 static void save_global_setting(const GlobalSetting &s) {
@@ -636,11 +494,9 @@ static void save_global_setting(const GlobalSetting &s) {
   try {
     [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
     try {
-      reg_put(key, REGMAP_IS_ENABLED, s.isEnabled);
-      reg_put(key, REGMAP_IS_CURRENT_PROFILE_CHANGED, s.isCurrentProfileChanged);
-      reg_put(key, REGMAP_CURRENT_PROFILE_NAME, s.currentProfileName);
+      RegDef::GLOBAL_SETTING_DEF.put(key, s.common);
     }
-    catch (RegPutFailed &) {
+    catch (Win32::RegMapper::PutFailed &) {
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
@@ -844,11 +700,11 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
 
   if (KeyHook::is_available()) {
     bool isEn = KeyHook::is_enabled();
-    if (!isEn && ts.window && setting.isEnabled) {
+    if (!isEn && ts.window && setting.common.isEnabled) {
       // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
       auto r = KeyHook::enable(dialog.get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
       Log::info(TEXT("enable_keyhook %hs"), r ? "succeeded":"failed");
-    } else if (isEn && (!setting.isEnabled || !ts.window)) {
+    } else if (isEn && (!setting.common.isEnabled || !ts.window)) {
       // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
       auto r = KeyHook::disable();
       Log::info(TEXT("disable_keyhook %hs"), r ? "succeeded":"failed");
@@ -857,7 +713,7 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
 
   lastTargetStatus = ts;
 
-  if (setting.isEnabled && ts.window && ts.window.is_visible()) {
+  if (setting.common.isEnabled && ts.window && ts.window.is_visible()) {
     // ターゲットのジオメトリを更新する
     auto cW = Win32::width(ts.clientRect);
     auto cH = Win32::height(ts.clientRect);
@@ -1200,7 +1056,7 @@ static auto make_long_integer_box_handler(LONG &stor) {
              if (val != stor) {
                Log::debug(TEXT("text box %X changed: %d -> %d"), id, stor, val);
                stor = val;
-               s_currentGlobalSetting.isCurrentProfileChanged = true;
+               s_currentGlobalSetting.common.isCurrentProfileChanged = true;
                s_isDialogChanged = true;
              }
              return TRUE;
@@ -1220,7 +1076,7 @@ auto make_check_button_handler(const CheckButtonMap<Enum> &m, Enum &stor, bool i
                Log::debug(TEXT("check box %X changed: %d -> %d"), id, static_cast<int>(stor) , static_cast<int>(val));
                stor = val;
                if (!isGlobal)
-                 s_currentGlobalSetting.isCurrentProfileChanged = true;
+                 s_currentGlobalSetting.common.isCurrentProfileChanged = true;
                s_isDialogChanged = true;
              }
              return TRUE;
@@ -1239,7 +1095,7 @@ auto make_radio_button_map(const RadioButtonMap<Enum, Num> &m, Enum &stor) {
                if (id == cid && tag != stor) {
                  Log::debug(TEXT("radio button %X changed: %d -> %d"), cid, static_cast<int>(stor), static_cast<int>(tag));
                  stor = tag;
-                 s_currentGlobalSetting.isCurrentProfileChanged = true;
+                 s_currentGlobalSetting.common.isCurrentProfileChanged = true;
                  s_isDialogChanged = true;
                  return TRUE;
                }
@@ -1306,14 +1162,14 @@ static void set_profile_text(Window dialog) {
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
   auto hInst = dialog.get_instance();
 
-  if (s_currentGlobalSetting.currentProfileName.empty())
+  if (s_currentGlobalSetting.common.currentProfileName.empty())
     buf = Win32::load_string(hInst, IDS_NEW_PROFILE);
   else {
-    buf = s_currentGlobalSetting.currentProfileName;
+    buf = s_currentGlobalSetting.common.currentProfileName;
     ComboBox_SelectString(item.get(), -1, buf.c_str());
   }
 
-  if (s_currentGlobalSetting.isCurrentProfileChanged)
+  if (s_currentGlobalSetting.common.isCurrentProfileChanged)
     buf += Win32::load_string(hInst, IDS_CHANGED_MARK);
 
   item.set_text(buf);
@@ -1329,14 +1185,14 @@ static void update_profile(Window dialog) {
 
 static int save_as(Window dialog) {
   auto &s = s_currentGlobalSetting;
-  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.currentProfileName.c_str());
+  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName.c_str());
   if (ret == IDCANCEL) {
     Log::debug(TEXT("save as: canceled"));
     return IDCANCEL;
   }
-  s.currentProfileName = profileName;
-  save_setting(s.currentProfileName.c_str(), s.currentProfile);
-  s.isCurrentProfileChanged = false;
+  s.common.currentProfileName = profileName;
+  save_setting(s.common.currentProfileName.c_str(), s.currentProfile);
+  s.common.isCurrentProfileChanged = false;
   return IDOK;
 }
 
@@ -1344,20 +1200,20 @@ static int save(Window dialog) {
   auto &s = s_currentGlobalSetting;
   Log::debug(TEXT("IDC_SAVE received"));
 
-  if (s.currentProfileName.empty())
+  if (s.common.currentProfileName.empty())
     return save_as(dialog);
 
-  if (!s.isCurrentProfileChanged) {
+  if (!s.common.isCurrentProfileChanged) {
     Log::debug(TEXT("unnecessary to save"));
     return IDOK;
   }
-  save_setting(s.currentProfileName.c_str(), s.currentProfile);
-  s.isCurrentProfileChanged = false;
+  save_setting(s.common.currentProfileName.c_str(), s.currentProfile);
+  s.common.isCurrentProfileChanged = false;
   return IDOK;
 }
 
 static int confirm_save(Window dialog) {
-  if (!s_currentGlobalSetting.isCurrentProfileChanged) {
+  if (!s_currentGlobalSetting.common.isCurrentProfileChanged) {
     Log::debug(TEXT("unnecessary to save"));
     return IDOK;
   }
@@ -1443,7 +1299,7 @@ static void update_lock_status(Window dialog) {
 
 static void update_main_controlls(Window dialog) {
   auto &setting = s_currentGlobalSetting;
-  set_check_button(dialog, make_bool_check_button_map(IDC_ENABLED), setting.isEnabled);
+  set_check_button(dialog, make_bool_check_button_map(IDC_ENABLED), setting.common.isEnabled);
   update_profile(dialog);
   update_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
   update_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
@@ -1463,18 +1319,18 @@ static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu(Window di
 
   // 無名プロファイルでは IDC_RENAME と IDC_DELETE を無効にする
   mii.fMask = MIIM_STATE;
-  mii.fState = s.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
+  mii.fState = s.common.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
   SetMenuItemInfo(submenu.get(), IDC_RENAME, false, &mii);
   SetMenuItemInfo(submenu.get(), IDC_DELETE, false, &mii);
 
   // 名前付きかつ無変更ならば IDC_SAVE を無効にする
   mii.fMask = MIIM_STATE;
-  mii.fState = !s.currentProfileName.empty() && !s.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+  mii.fState = !s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
   SetMenuItemInfo(submenu.get(), IDC_SAVE, false, &mii);
 
   // 無名かつ無変更ならば IDC_NEW を無効にする
   mii.fMask = MIIM_STATE;
-  mii.fState = s.currentProfileName.empty() && !s.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+  mii.fState = s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
   SetMenuItemInfo(submenu.get(), IDC_NEW, false, &mii);
 
   return std::make_pair(std::move(menu), std::move(submenu));
@@ -1484,7 +1340,7 @@ static void init_main_controlls(Window dialog) {
   auto &setting = s_currentGlobalSetting;
   {
     static constexpr auto m = make_bool_check_button_map(IDC_ENABLED);
-    register_handler(s_commandHandlerMap, IDC_ENABLED, make_check_button_handler(m, setting.isEnabled, true));
+    register_handler(s_commandHandlerMap, IDC_ENABLED, make_check_button_handler(m, setting.common.isEnabled, true));
   }
 
   init_profile(dialog);
@@ -1501,7 +1357,7 @@ static void init_main_controlls(Window dialog) {
                    [](Window) {
                      Log::debug(TEXT("IDC_LOCK received"));
                      s_currentGlobalSetting.currentProfile.isLocked = !s_currentGlobalSetting.currentProfile.isLocked;
-                     s_currentGlobalSetting.isCurrentProfileChanged = true;
+                     s_currentGlobalSetting.common.isCurrentProfileChanged = true;
                      s_isDialogChanged = true;
                      return TRUE;
                    });
@@ -1520,29 +1376,29 @@ static void init_main_controlls(Window dialog) {
   register_handler(s_commandHandlerMap, IDC_RENAME,
                    [](Window dialog) {
                      auto &s = s_currentGlobalSetting;
-                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.currentProfileName.c_str());
+                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.common.currentProfileName.c_str());
                      if (ret == IDCANCEL) {
                        Log::debug(TEXT("rename: canceled"));
                        return TRUE;
                      }
-                     if (newProfileName == s.currentProfileName) {
+                     if (newProfileName == s.common.currentProfileName) {
                        Log::debug(TEXT("rename: not changed"));
                        return TRUE;
                      }
                      delete_profile(newProfileName.c_str());
-                     rename_profile(s.currentProfileName.c_str(), newProfileName.c_str());
-                     s.currentProfileName = newProfileName;
+                     rename_profile(s.common.currentProfileName.c_str(), newProfileName.c_str());
+                     s.common.currentProfileName = newProfileName;
                      update_profile(dialog);
                      return TRUE;
                    });
   register_handler(s_commandHandlerMap, IDC_DELETE,
                    [](Window dialog) {
                      auto &s = s_currentGlobalSetting;
-                     if (s.currentProfileName.empty())
+                     if (s.common.currentProfileName.empty())
                        return TRUE;
                      TCHAR tmp[256];
                      auto hInst = dialog.get_instance();
-                     _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.currentProfileName.c_str());
+                     _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.common.currentProfileName.c_str());
                      auto ret = open_message_box(dialog,
                                                  tmp,
                                                  Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
@@ -1551,8 +1407,8 @@ static void init_main_controlls(Window dialog) {
                      case IDCANCEL:
                        return TRUE;
                      }
-                     delete_profile(s.currentProfileName.c_str());
-                     s.currentProfileName = TEXT("");
+                     delete_profile(s.common.currentProfileName.c_str());
+                     s.common.currentProfileName = TEXT("");
                      s_isDialogChanged = true;
                      update_main_controlls(dialog);
                      return TRUE;
@@ -1561,11 +1417,11 @@ static void init_main_controlls(Window dialog) {
   register_handler(s_commandHandlerMap, IDC_NEW,
                    [](Window dialog) {
                      auto &s = s_currentGlobalSetting;
-                     if (s.currentProfileName.empty() && !s.isCurrentProfileChanged) {
+                     if (s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged) {
                        Log::debug(TEXT("unnecessary to do"));
                        return TRUE;
                      }
-                     auto type = s.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
+                     auto type = s.common.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
                      auto hInst = dialog.get_instance();
                      auto ret = open_message_box(dialog,
                                                  Win32::load_string(hInst, IDS_CONFIRM_INIT).c_str(),
@@ -1577,17 +1433,17 @@ static void init_main_controlls(Window dialog) {
                      case IDYES:
                        break;
                      case IDNO:
-                       if (s.isCurrentProfileChanged) {
+                       if (s.common.isCurrentProfileChanged) {
                          switch (confirm_save(dialog)) {
                          case IDCANCEL:
                            return TRUE;
                          }
                        }
                        s.currentProfile = DEFAULT_SETTING;
-                       s.isCurrentProfileChanged = false;
+                       s.common.isCurrentProfileChanged = false;
                        break;
                      }
-                     s.currentProfileName = TEXT("");
+                     s.common.currentProfileName = TEXT("");
                      s_isDialogChanged = true;
                      update_main_controlls(dialog);
                      return TRUE;
@@ -1761,9 +1617,9 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     switch (confirm_save(dialog)) {
     case IDOK: {
       Log::debug(TEXT("selected: %S"), n.c_str());
-      s_currentGlobalSetting.currentProfileName = n;
+      s_currentGlobalSetting.common.currentProfileName = n;
       s_currentGlobalSetting.currentProfile = load_setting(n.c_str());
-      s_currentGlobalSetting.isCurrentProfileChanged = false;
+      s_currentGlobalSetting.common.isCurrentProfileChanged = false;
       break;
     }
     case IDCANCEL:
