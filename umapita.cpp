@@ -641,11 +641,10 @@ static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
   int index = -1;
 
   for (auto const &[name, whole, work] : s_monitors) {
-    TCHAR tmp[1024];
     auto const &rc = isConsiderTaskbar ? work : whole;
-    _stprintf(tmp, TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-              index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str());
-    AppendMenu(menu.get(), MF_STRING, id++, tmp);
+    AppendMenu(menu.get(), MF_STRING, id++,
+               Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
+                               index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str()).c_str());
   }
 
   return menu;
@@ -865,7 +864,7 @@ void center_popup(Window owner, Window popup) {
 //
 // メッセージボックスをオーナーの中央に開く
 //
-int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
+int open_message_box(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UINT type) {
   static TLSSpec Window s_owner;
   static TLSSpec HHOOK s_hHook = nullptr;
 
@@ -881,7 +880,7 @@ int open_message_box(Window owner, LPCTSTR text, LPCTSTR caption, UINT type) {
                                return CallNextHookEx(hHook, code, wParam, lParam);
                              },
                              owner.get_instance(), GetCurrentThreadId());
-  auto ret = owner.message_box(text, caption, type);
+  auto ret = owner.message_box(text.ptr, caption.ptr, type);
   s_owner.reset();
   s_hHook = nullptr;
   return ret;
@@ -927,10 +926,8 @@ private:
       window.get_item(IDC_SELECT_PROFILE).set_text(m_profileName);
       window.get_item(IDOK).enable(false);
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
-      WCHAR buf[256];
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
-      _stprintf(buf, detail.c_str(), m_profileName.c_str());
-      window.get_item(IDC_SAVE_DETAIL).set_text(buf);
+      window.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()).c_str());
       center_popup(m_owner, window);
       return TRUE;
     }
@@ -945,9 +942,9 @@ private:
           return TRUE;
         if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
           auto hInst = window.get_instance();
-          TCHAR tmp[256];
-          _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE).c_str(), n.c_str());
-          auto r = open_message_box(window, tmp, Win32::load_string(hInst, IDS_CONFIRM).c_str(), MB_OKCANCEL);
+          auto r = open_message_box(window,
+                                    Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
+                                    Win32::load_string(hInst, IDS_CONFIRM).c_str(), MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -1042,9 +1039,7 @@ static void set_check_button(Window dialog, const CheckButtonMap<Enum> &m, Enum 
 }
 
 static void set_monitor_number(Window dialog, int id, int num) {
-  TCHAR buf[256];
-  _stprintf(buf, TEXT("%d"), num);
-  dialog.get_item(id).set_text(buf);
+  dialog.get_item(id).set_text(Win32::asprintf(TEXT("%d"), num));
 }
 
 static auto make_long_integer_box_handler(LONG &stor) {
@@ -1125,9 +1120,7 @@ auto make_menu_button_handler(int id, MenuFactory f) {
 static void update_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
   auto get = [dialog](auto id) { return dialog.get_item(id); };
   auto setint = [get](auto id, int v) {
-                  TCHAR buf[256];
-                  _stprintf(buf, TEXT("%d"), v);
-                  get(id).set_text(buf);
+                  get(id).set_text(Win32::asprintf(TEXT("%d"), v));
                 };
   setint(ids.monitorNumber, setting.monitorNumber);
   set_check_button(dialog, ids.isConsiderTaskbar, setting.isConsiderTaskbar);
@@ -1396,11 +1389,10 @@ static void init_main_controlls(Window dialog) {
                      auto &s = s_currentGlobalSetting;
                      if (s.common.currentProfileName.empty())
                        return TRUE;
-                     TCHAR tmp[256];
                      auto hInst = dialog.get_instance();
-                     _stprintf(tmp, Win32::load_string(hInst, IDS_CONFIRM_DELETE).c_str(), s.common.currentProfileName.c_str());
                      auto ret = open_message_box(dialog,
-                                                 tmp,
+                                                 Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
+                                                                 s.common.currentProfileName.c_str()),
                                                  Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
                                                  MB_OKCANCEL);
                      switch (ret) {
@@ -1459,9 +1451,8 @@ static void init_main_controlls(Window dialog) {
 }
 
 static void update_target_status_text(Window dialog, const TargetStatus &ts) {
-  TCHAR tmp[256];
   bool isHorizontal = false, isVertical = false;
-  _tcscpy(tmp, TEXT("<target not found>"));
+  auto text = Win32::tstring{TEXT("<target not found>")};
   if (ts.window) {
     auto cW = Win32::width(ts.clientRect);
     auto cH = Win32::height(ts.clientRect);
@@ -1469,14 +1460,13 @@ static void update_target_status_text(Window dialog, const TargetStatus &ts) {
     auto wH = Win32::height(ts.windowRect);
     isHorizontal = cW > cH;
     isVertical = !isHorizontal;
-    _stprintf(tmp,
-              TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
-              static_cast<unsigned>(ts.window.to<LPARAM>()),
-              ts.windowRect.left, ts.windowRect.top, wW, wH,
-              ts.clientRect.left, ts.clientRect.top, cW, cH,
-              Win32::load_string(dialog.get_instance(), isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
+    text = Win32::asprintf(TEXT("0x%08X (%ld,%ld) [%ldx%ld] / (%ld,%ld) [%ldx%ld] (%ls)"),
+                           static_cast<unsigned>(ts.window.to<LPARAM>()),
+                           ts.windowRect.left, ts.windowRect.top, wW, wH,
+                           ts.clientRect.left, ts.clientRect.top, cW, cH,
+                           Win32::load_string(dialog.get_instance(), isHorizontal ? IDS_HORIZONTAL:IDS_VERTICAL).c_str());
   }
-  dialog.get_item(IDC_TARGET_STATUS).set_text(tmp);
+  dialog.get_item(IDC_TARGET_STATUS).set_text(text);
   s_verticalGroupBox.set_selected(isVertical);
   s_horizontalGroupBox.set_selected(isHorizontal);
 }
