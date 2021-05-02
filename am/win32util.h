@@ -12,40 +12,14 @@ inline tstring remove_ws_on_both_ends(const tstring &src) {
   return b < e ? tstring{b, e} : tstring{};
 }
 
-namespace Bits_ {
-
-template <typename> struct StrToPtr;
-template <>
-struct StrToPtr<std::nullptr_t> {
-  static std::nullptr_t to_ptr(std::nullptr_t ptr) { return ptr; }
-};
-template <>
-struct StrToPtr<LPTSTR> {
-  static LPTSTR to_ptr(LPTSTR ptr) { return ptr; }
-};
-template <>
-struct StrToPtr<LPCTSTR> {
-  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
-};
-template <std::size_t N>
-struct StrToPtr<TCHAR [N]> {
-  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
-};
-template <std::size_t N>
-struct StrToPtr<const TCHAR [N]> {
-  static LPCTSTR to_ptr(LPCTSTR ptr) { return ptr; }
-};
-template <>
-struct StrToPtr<tstring> {
-  static LPCTSTR to_ptr(const tstring &s) { return s.c_str(); }
+struct StrPtr {
+  LPCTSTR ptr;
+  StrPtr(std::nullptr_t) : ptr(nullptr) { }
+  StrPtr(LPTSTR s) : ptr(s) { }
+  StrPtr(LPCTSTR s) : ptr(s) { }
+  StrPtr(const tstring &s) : ptr(s.c_str()) { }
 };
 
-} // namespace Bits_
-
-template <typename T>
-LPCTSTR str_to_ptr(const T &s) {
-  return Bits_::StrToPtr<T>::to_ptr(s);
-}
 
 //
 // get null-terminated string from Win32 API and return it as tstring
@@ -167,9 +141,8 @@ public:
   tstring get_text() const {
     return Win32::get_sz(::GetWindowTextLength(get()), [=](LPTSTR buf, std::size_t len) { ::GetWindowText(get(), buf, len+1); });
   }
-  template <typename S>
-  void set_text(const S &text) const {
-    SetWindowText(get(), str_to_ptr(text));
+  void set_text(StrPtr text) const {
+    SetWindowText(get(), text.ptr);
   }
   Window get_parent() const { return GetParent(get()); }
   RECT get_client_rect() const {
@@ -200,9 +173,8 @@ public:
   void set_pos(Window insertAfter, int x, int y, int cx, int cy, UINT uFlags) const {
     throw_if<Win32ErrorCode, false>(SetWindowPos(get(), insertAfter.get(), x, y, cx, cy, uFlags), "Window::set_pos");
   }
-  template <typename S1, typename S2>
-  static Window find(const S1 &cls, const S2 &name) {
-    return FindWindow(str_to_ptr(cls), str_to_ptr(name));
+  static Window find(StrPtr cls, StrPtr name) {
+    return FindWindow(cls.ptr, name.ptr);
   }
   WINDOWINFO get_info() const {
     auto wi = make_sized_pod<WINDOWINFO>();
@@ -227,9 +199,8 @@ public:
   WNDPROC get_wndproc() const { return get_long_ptr<WNDPROC>(GWLP_WNDPROC); }
   WNDPROC set_wndproc(WNDPROC p) const { return set_long_ptr(GWLP_WNDPROC, p); }
   HINSTANCE get_instance() const { return get_long_ptr<HINSTANCE>(GWLP_HINSTANCE); }
-  template <typename S1, typename S2>
-  int message_box(const S1 &text, const S2 &caption, UINT uType) const {
-    return MessageBox(get(), str_to_ptr(text), str_to_ptr(caption), uType);
+  int message_box(StrPtr text, StrPtr caption, UINT uType) const {
+    return MessageBox(get(), text.ptr, caption.ptr, uType);
   }
   // XXX: dialog
   Window get_item(int id) const {
