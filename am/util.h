@@ -141,5 +141,15 @@ struct ErrorCode : public RuntimeError<ErrorCode<Code, OK, Identifier>> {
   }
 };
 
+//
+// tuple
+//
+template <std::size_t i=0, typename Fn, typename ...Args>
+void tuple_foreach(const std::tuple<Args...> &t, [[maybe_unused]] Fn f) {
+  if constexpr (i < sizeof...(Args)) {
+    f(std::get<i>(t));
+    tuple_foreach<i+1>(t, f);
+  }
+}
 
 } // namespace AM

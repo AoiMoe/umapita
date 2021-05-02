@@ -4,18 +4,6 @@
 
 namespace AM::Win32::RegMapper {
 
-namespace Bits_ {
-
-template <std::size_t i=0, typename Fn, typename ...Args>
-void tuple_foreach(const std::tuple<Args...> &t, [[maybe_unused]] Fn f) {
-  if constexpr (i < sizeof...(Args)) {
-    f(std::get<i>(t));
-    tuple_foreach<i+1>(t, f);
-  }
-}
-
-} // namespace Bits_
-
 struct GetFailed : AM::RuntimeError<GetFailed> { };
 struct PutFailed : AM::RuntimeError<PutFailed> { };
 
@@ -75,15 +63,15 @@ struct CompositeValueDef {
   std::tuple<FieldBinderTypes...> fieldDefs;
   Struct get(const Win32::Reg::Key &key) const {
     Struct values;
-    Bits_::tuple_foreach(fieldDefs, [&key, &values](auto /* FieldBinder<...> */ const &d) {
-                                      values.*(d.fieldOffset) = d.fieldDef.get(key);
-                                    });
+    tuple_foreach(fieldDefs, [&key, &values](auto /* FieldBinder<...> */ const &d) {
+                               values.*(d.fieldOffset) = d.fieldDef.get(key);
+                             });
     return values;
   }
   void put(const Win32::Reg::Key &key, const Struct &values) const {
-    Bits_::tuple_foreach(fieldDefs, [&key, &values](auto /* FieldBinder<...> */ const &d) {
-                                      d.fieldDef.put(key, values.*(d.fieldOffset));
-                                    });
+    tuple_foreach(fieldDefs, [&key, &values](auto /* FieldBinder<...> */ const &d) {
+                               d.fieldDef.put(key, values.*(d.fieldOffset));
+                             });
   }
 };
 
