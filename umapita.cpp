@@ -310,7 +310,6 @@ public:
     }
   }
 };
-CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 
 
 //
@@ -1024,6 +1023,7 @@ void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m,
 }
 
 static CommandHandlerMap s_commandHandlerMap;
+CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 static bool s_isDialogChanged = false;
 
 template <typename Enum, std::size_t Num>
