@@ -47,13 +47,13 @@ struct TypeSize {
   DWORD size;
 };
 
-inline TypeSize query(KeyHandle key, LPCTSTR name, void *buf, DWORD size) {
+inline TypeSize query(KeyHandle key, StrPtr name, void *buf, DWORD size) {
   DWORD type;
-  ErrorCode::ensure_ok(RegQueryValueEx(key.hKey, name, 0, &type, to_byte_ptr(buf), &size), "RegQueryValueEx failed");
+  ErrorCode::ensure_ok(RegQueryValueEx(key.hKey, name.ptr, 0, &type, to_byte_ptr(buf), &size), "RegQueryValueEx failed");
   return TypeSize{type, size};
 }
 
-inline TypeSize query_type_size(KeyHandle key, LPCTSTR name) {
+inline TypeSize query_type_size(KeyHandle key, StrPtr name) {
   return query(key, name, nullptr, 0);
 }
 
@@ -77,41 +77,41 @@ using TypeUnmatched = Bits_::TypeUnmatched;
 using SizeUnmatched = Bits_::SizeUnmatched;
 
 
-inline Key open_key(Bits_::KeyHandle parent, LPCTSTR name, DWORD opts, REGSAM sam) {
+inline Key open_key(Bits_::KeyHandle parent, StrPtr name, DWORD opts, REGSAM sam) {
   HKEY hKey{};
 
-  ErrorCode::ensure_ok(RegOpenKeyEx(parent.hKey, name, opts, sam, &hKey), "RegOpenKeyEx failed");
+  ErrorCode::ensure_ok(RegOpenKeyEx(parent.hKey, name.ptr, opts, sam, &hKey), "RegOpenKeyEx failed");
 
   return Key{hKey};
 }
 
-inline std::pair<Key, DWORD> create_key(Bits_::KeyHandle parent, LPCTSTR name, DWORD opts, REGSAM sam, const LPSECURITY_ATTRIBUTES lpSec =nullptr) {
+inline std::pair<Key, DWORD> create_key(Bits_::KeyHandle parent, StrPtr name, DWORD opts, REGSAM sam, const LPSECURITY_ATTRIBUTES lpSec =nullptr) {
   HKEY hKey{};
   DWORD disp{};
 
-  ErrorCode::ensure_ok(RegCreateKeyEx(parent.hKey, name, 0, nullptr, opts, sam, lpSec, &hKey, &disp), "RegCreateKeyEx failed");
+  ErrorCode::ensure_ok(RegCreateKeyEx(parent.hKey, name.ptr, 0, nullptr, opts, sam, lpSec, &hKey, &disp), "RegCreateKeyEx failed");
 
   return std::make_pair(Key{hKey}, disp);
 }
 
-inline tstring query_sz(Bits_::KeyHandle key, LPCTSTR name) {
+inline tstring query_sz(Bits_::KeyHandle key, StrPtr name) {
   auto [type, size] = Bits_::ensure_type<REG_SZ>(Bits_::query_type_size(key, name));
   return Win32::get_sz(size/sizeof (TCHAR) - 1, [&](LPTSTR buf) { Bits_::ensure_type<REG_SZ>(Bits_::query(key, name, buf, size)); });
 }
 
-inline DWORD query_dword(Bits_::KeyHandle key, LPCTSTR name) {
+inline DWORD query_dword(Bits_::KeyHandle key, StrPtr name) {
   DWORD ret;
   Bits_::ensure_type_size<REG_DWORD, DWORD>(Bits_::query(key, name, &ret, sizeof (ret)));
   return ret;
 }
 
-inline void set_sz(Bits_::KeyHandle key, LPCTSTR name, LPCTSTR value) {
-  DWORD size = (_tcslen(value)+1) * sizeof (TCHAR);
-  ErrorCode::ensure_ok(RegSetValueEx(key.hKey, name, 0, REG_SZ, Bits_::to_byte_ptr(value), size), "RegSetValueEx failed");
+inline void set_sz(Bits_::KeyHandle key, StrPtr name, StrPtr value) {
+  DWORD size = (_tcslen(value.ptr)+1) * sizeof (TCHAR);
+  ErrorCode::ensure_ok(RegSetValueEx(key.hKey, name.ptr, 0, REG_SZ, Bits_::to_byte_ptr(value.ptr), size), "RegSetValueEx failed");
 }
 
-inline void set_dword(Bits_::KeyHandle key, LPCTSTR name, DWORD value) {
-  ErrorCode::ensure_ok(RegSetValueEx(key.hKey, name, 0, REG_DWORD, Bits_::to_byte_ptr(&value), sizeof (value)), "RegSetValueEx failed");
+inline void set_dword(Bits_::KeyHandle key, StrPtr name, DWORD value) {
+  ErrorCode::ensure_ok(RegSetValueEx(key.hKey, name.ptr, 0, REG_DWORD, Bits_::to_byte_ptr(&value), sizeof (value)), "RegSetValueEx failed");
 }
 
 template <typename F>
@@ -135,16 +135,16 @@ void enum_key(Bits_::KeyHandle key, F f) {
   }
 }
 
-inline void rename_key(Bits_::KeyHandle key, LPCTSTR oldName, LPCTSTR newName) {
-  ErrorCode::ensure_ok(RegRenameKey(key.hKey, oldName, newName), "RegRenameKey failed");
+inline void rename_key(Bits_::KeyHandle key, StrPtr oldName, StrPtr newName) {
+  ErrorCode::ensure_ok(RegRenameKey(key.hKey, oldName.ptr, newName.ptr), "RegRenameKey failed");
 }
 
-inline void delete_key(Bits_::KeyHandle key, LPCTSTR name) {
-  ErrorCode::ensure_ok(RegDeleteKey(key.hKey, name), "RegDeleteKey failed");
+inline void delete_key(Bits_::KeyHandle key, StrPtr name) {
+  ErrorCode::ensure_ok(RegDeleteKey(key.hKey, name.ptr), "RegDeleteKey failed");
 }
 
-inline void delete_tree(Bits_::KeyHandle key, LPCTSTR name) {
-  ErrorCode::ensure_ok(RegDeleteTree(key.hKey, name), "RegDeleteTree failed");
+inline void delete_tree(Bits_::KeyHandle key, StrPtr name) {
+  ErrorCode::ensure_ok(RegDeleteTree(key.hKey, name.ptr), "RegDeleteTree failed");
 }
 
 } // namespace AM::Win32::Reg
