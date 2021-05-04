@@ -352,20 +352,20 @@ static void fill_string_list_to_combobox(Window cb, const std::vector<Win32::tst
   }
 }
 
-struct SaveDialogBox {
+struct UmapitaSaveDialogBox {
   enum Kind { Save, Rename };
 private:
   Window m_owner;
   Kind m_kind;
   Win32::tstring m_profileName;
-  SaveDialogBox(Window owner, Kind kind, Win32::StrPtr oldname) : m_owner{owner}, m_kind{kind}, m_profileName{oldname.ptr} { }
+  UmapitaSaveDialogBox(Window owner, Kind kind, Win32::StrPtr oldname) : m_owner{owner}, m_kind{kind}, m_profileName{oldname.ptr} { }
   //
   static CALLBACK INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     Window window{hWnd};
     if (msg == WM_INITDIALOG) {
       window.set_dialog_user_data(lParam);
     }
-    auto self = window.get_dialog_user_data<SaveDialogBox *>();
+    auto self = window.get_dialog_user_data<UmapitaSaveDialogBox *>();
     return self ? self->dialog_proc(window, msg, wParam, lParam) : FALSE;
   }
 
@@ -429,11 +429,15 @@ private:
 
     return FALSE;
   }
-  SaveDialogBox() { }
+  UmapitaSaveDialogBox() { }
 public:
   static std::pair<int, Win32::tstring> open(Window owner, Kind kind, Win32::StrPtr oldname) {
-    SaveDialogBox sdb{owner, kind, oldname};
-    auto r = DialogBoxParam(owner.get_instance(), MAKEINTRESOURCE(IDD_SAVE), owner.get(), &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
+    UmapitaSaveDialogBox sdb{owner, kind, oldname};
+    auto r = DialogBoxParam(owner.get_instance(),
+                            MAKEINTRESOURCE(IDD_SAVE),
+                            owner.get(),
+                            &UmapitaSaveDialogBox::s_dialog_proc,
+                            reinterpret_cast<LPARAM>(&sdb));
     switch (r) {
     case IDOK:
       return std::make_pair(IDOK, sdb.m_profileName);
@@ -830,7 +834,7 @@ static void update_main_controlls(Window dialog) {
 
 static int save_as(Window dialog) {
   auto &s = s_currentGlobalSetting;
-  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName);
+  auto [ret, profileName] = UmapitaSaveDialogBox::open(dialog, UmapitaSaveDialogBox::Save, s.common.currentProfileName);
   if (ret == IDCANCEL) {
     Log::debug(TEXT("save as: canceled"));
     return IDCANCEL;
@@ -966,7 +970,7 @@ static void init_main_controlls(Window dialog) {
   register_handler(s_commandHandlerMap, IDC_RENAME,
                    [](Window dialog) {
                      auto &s = s_currentGlobalSetting;
-                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.common.currentProfileName);
+                     auto [ret, newProfileName] = UmapitaSaveDialogBox::open(dialog, UmapitaSaveDialogBox::Rename, s.common.currentProfileName);
                      if (ret == IDCANCEL) {
                        Log::debug(TEXT("rename: canceled"));
                        return TRUE;
