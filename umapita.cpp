@@ -181,16 +181,10 @@ public:
 // UI
 //
 
-inline NOTIFYICONDATA make_notify_icon_data(Window window, UINT uID) {
+static BOOL add_tasktray_icon(Window window, HICON hIcon) {
   auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
   nid.hWnd = window.get();
-  nid.uID = uID;
-  return nid;
-}
-
-static BOOL add_tasktray_icon(Window window, HICON hIcon) {
-  auto nid = make_notify_icon_data(window, TASKTRAY_ID);
-
+  nid.uID = TASKTRAY_ID;
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TASKTRAY;
   nid.hIcon = hIcon;
@@ -199,8 +193,9 @@ static BOOL add_tasktray_icon(Window window, HICON hIcon) {
 }
 
 static void delete_tasktray_icon(Window window) {
-  auto nid = make_notify_icon_data(window, TASKTRAY_ID);
-
+  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
+  nid.hWnd = window.get();
+  nid.uID = TASKTRAY_ID;
   Shell_NotifyIcon(NIM_DELETE, &nid);
 }
 
