@@ -228,13 +228,6 @@ static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
   return menu;
 }
 
-static void show_button_menu(Window window, Win32::MenuHandle menu) {
-  auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
-  auto rect = window.get_window_rect();
-  tpmp.rcExclude = rect;
-  TrackPopupMenuEx(menu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, window.get_parent().get(), &tpmp);
-}
-
 static const Monitor *get_current_monitor(int monitorNumber) {
   auto mn = monitorNumber + 1;
 
@@ -782,7 +775,10 @@ auto make_menu_button_handler(int id, MenuFactory f) {
            switch (notify) {
            case BN_CLICKED: {
              [[maybe_unused]] auto [housekeeper, menu] = f(dialog);
-             show_button_menu(control, menu);
+             auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
+             auto rect = control.get_window_rect();
+             tpmp.rcExclude = rect;
+             TrackPopupMenuEx(Win32::MenuHandle{menu}.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, control.get_parent().get(), &tpmp);
              return TRUE;
            }
            }
