@@ -17,11 +17,6 @@ namespace Win32 = AM::Win32;
 using AM::Log;
 using Win32::Window;
 
-UINT s_msgTaskbarCreated = 0;
-Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
-UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
-
-
 //
 // 監視対象ウィンドウの状態
 //
@@ -177,6 +172,17 @@ static TargetStatus adjust_target(TargetStatus ts, const UmapitaMonitors &monito
 //
 // main dialog
 //
+namespace Handler = AM::Win32::Handler;
+using CommandHandlerMap = Handler::Map<int, Handler::DialogMessageTraits>;
+
+static CommandHandlerMap s_commandHandlerMap;
+static UmapitaCustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
+static UmapitaMonitors s_monitors;
+static TargetStatus s_lastTargetStatus;
+static bool s_isDialogChanged = false;
+static UINT s_msgTaskbarCreated = 0;
+static Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
+static UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
 //
 // タスクトレイアイコン
@@ -315,31 +321,6 @@ constexpr PerOrientationSettingID HORIZONTAL_SETTING_ID = {
 };
 
 
-namespace Handler = AM::Win32::Handler;
-using CommandHandlerMap = Handler::Map<int, Handler::DialogMessageTraits>;
-
-template <typename H>
-void register_handler(CommandHandlerMap &hm, int id, H h) {
-  hm.register_handler(id, h);
-}
-
-template <typename Enum, typename H>
-void register_handler(CommandHandlerMap &hm, const CheckButtonMap<Enum> &m, H h) {
-  hm.register_handler(m.id, h);
-}
-
-template <typename Enum, std::size_t Num, typename H>
-void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m, H h) {
-  for (auto const &[tag, id] : m)
-    hm.register_handler(id, h);
-}
-
-static CommandHandlerMap s_commandHandlerMap;
-static UmapitaCustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
-static UmapitaMonitors s_monitors;
-static TargetStatus s_lastTargetStatus;
-static bool s_isDialogChanged = false;
-
 template <typename Enum, std::size_t Num>
 static void set_radio_buttons(Window dialog, const RadioButtonMap<Enum, Num> &m, Enum v) {
   auto get = [dialog](auto id) { return dialog.get_item(id).get(); };
@@ -450,6 +431,22 @@ static void update_per_orientation_settings(Window dialog, const PerOrientationS
   set_radio_buttons(dialog, ids.origin, setting.origin);
   setint(ids.offsetX, setting.offsetX);
   setint(ids.offsetY, setting.offsetY);
+}
+
+template <typename H>
+void register_handler(CommandHandlerMap &hm, int id, H h) {
+  hm.register_handler(id, h);
+}
+
+template <typename Enum, typename H>
+void register_handler(CommandHandlerMap &hm, const CheckButtonMap<Enum> &m, H h) {
+  hm.register_handler(m.id, h);
+}
+
+template <typename Enum, std::size_t Num, typename H>
+void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m, H h) {
+  for (auto const &[tag, id] : m)
+    hm.register_handler(id, h);
 }
 
 static void init_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, UmapitaSetting::PerOrientation &setting) {
