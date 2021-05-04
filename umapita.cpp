@@ -315,7 +315,10 @@ public:
 //
 // レジストリ
 //
-namespace RegDef {
+namespace UmapitaRegistry {
+
+namespace Bits_ {
+
 using namespace AM::Win32::RegMapper;
 constexpr auto ENUM_WINDOW_AREA =
     make_enum_tag_map(
@@ -377,13 +380,12 @@ constexpr auto GLOBAL_SETTING_DEF =
       make_string(TEXT("currentProfileName"),
                              &GlobalCommonSetting::currentProfileName,
                              DEFAULT_GLOBAL_COMMON_SETTING.currentProfileName));
-} // RegDef
 
-inline Win32::tstring encode_profile_name(LPCTSTR src) {
+inline Win32::tstring encode_profile_name(Win32::StrPtr src) {
   Win32::tstring ret;
 
-  for (; *src; src++) {
-    switch (*src) {
+  for (; *src.ptr; src.ptr++) {
+    switch (*src.ptr) {
     case TEXT(':'):
       ret += TEXT("%3A");
       break;
@@ -397,34 +399,34 @@ inline Win32::tstring encode_profile_name(LPCTSTR src) {
       ret += TEXT("%25");
       break;
     default:
-      ret += *src;
+      ret += *src.ptr;
     }
   }
   return ret;
 }
 
-inline Win32::tstring decode_profile_name(LPCTSTR src) {
+Win32::tstring decode_profile_name(Win32::StrPtr src) {
   Win32::tstring ret;
 
-  for (; *src; src++) {
-    if (src[0] == TEXT('%') && _istxdigit(src[1]) && _istxdigit(src[2])) {
-      TCHAR buf[3] = { src[1], src[2], L'\0' };
+  for (; *src.ptr; src.ptr++) {
+    if (src.ptr[0] == TEXT('%') && _istxdigit(src.ptr[1]) && _istxdigit(src.ptr[2])) {
+      TCHAR buf[3] = { src.ptr[1], src.ptr[2], L'\0' };
       TCHAR *next;
       ret += static_cast<TCHAR>(_tcstol(buf, &next, 16));
-      src += 2;
+      src.ptr += 2;
     } else
-      ret += *src;
+      ret += *src.ptr;
   }
   return ret;
 }
 
-inline Win32::tstring make_regpath(LPCTSTR profileName) {
+Win32::tstring make_regpath(Win32::StrPtr profileName) {
   Win32::tstring tmp{REG_PROJECT_ROOT_PATH};
 
-  if (profileName) {
+  if (profileName.ptr) {
     tmp += TEXT("\\");
     tmp += REG_PROFILES_SUBKEY;
-    if (*profileName) {
+    if (*profileName.ptr) {
       tmp += TEXT("\\");
       tmp += encode_profile_name(profileName);
     }
@@ -432,13 +434,15 @@ inline Win32::tstring make_regpath(LPCTSTR profileName) {
   return tmp;
 }
 
-static Setting load_setting(LPCTSTR profileName) {
-  auto path = make_regpath(profileName);
+} // namespace UmapitaRegistry::Bits_
+
+Setting load_setting(Win32::StrPtr profileName) {
+  auto path = Bits_::make_regpath(profileName);
 
   try {
-    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path, 0, KEY_READ);
     try {
-      return RegDef::PER_PROFILE_SETTING_DEF.get(key);
+      return Bits_::PER_PROFILE_SETTING_DEF.get(key);
     }
     catch (Win32::RegMapper::GetFailed &) {
       return DEFAULT_SETTING;
@@ -450,13 +454,13 @@ static Setting load_setting(LPCTSTR profileName) {
   }
 }
 
-static void save_setting(LPCTSTR profileName, const Setting &s) {
-  auto path = make_regpath(profileName);
+void save_setting(Win32::StrPtr profileName, const Setting &s) {
+  auto path = Bits_::make_regpath(profileName);
 
   try {
-    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path, 0, KEY_WRITE);
     try {
-      RegDef::PER_PROFILE_SETTING_DEF.put(key, s);
+      Bits_::PER_PROFILE_SETTING_DEF.put(key, s);
     }
     catch (Win32::RegMapper::PutFailed &) {
     }
@@ -466,14 +470,14 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
   }
 }
 
-static GlobalSetting load_global_setting() {
+GlobalSetting load_global_setting() {
   auto load_common =
       []() {
-        auto path = make_regpath(nullptr);
+        auto path = Bits_::make_regpath(nullptr);
         try {
-          auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
+          auto key = Win32::Reg::open_key(REG_ROOT_KEY, path, 0, KEY_READ);
           try {
-            return RegDef::GLOBAL_SETTING_DEF.get(key);
+            return Bits_::GLOBAL_SETTING_DEF.get(key);
           }
           catch (Win32::RegMapper::GetFailed &) {
             return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
@@ -487,13 +491,13 @@ static GlobalSetting load_global_setting() {
   return GlobalSetting{load_common(), load_setting(nullptr)};
 }
 
-static void save_global_setting(const GlobalSetting &s) {
-  auto path = make_regpath(nullptr);
+void save_global_setting(const GlobalSetting &s) {
+  auto path = Bits_::make_regpath(nullptr);
 
   try {
-    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
+    [[maybe_unused]] auto [key, disp ] = Win32::Reg::create_key(REG_ROOT_KEY, path, 0, KEY_WRITE);
     try {
-      RegDef::GLOBAL_SETTING_DEF.put(key, s.common);
+      Bits_::GLOBAL_SETTING_DEF.put(key, s.common);
     }
     catch (Win32::RegMapper::PutFailed &) {
     }
@@ -504,15 +508,15 @@ static void save_global_setting(const GlobalSetting &s) {
   save_setting(nullptr, s.currentProfile);
 }
 
-static std::vector<Win32::tstring> enum_profile() {
+std::vector<Win32::tstring> enum_profile() {
   std::vector<Win32::tstring> ret;
 
   Win32::tstring path{REG_PROJECT_ROOT_PATH};
   path += TEXT("\\");
   path += REG_PROFILES_SUBKEY;
   try {
-    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
-    Win32::Reg::enum_key(key, [&ret](Win32::tstring name) { ret.emplace_back(decode_profile_name(name.c_str())); });
+    [[maybe_unused]] auto [key, disp] = Win32::Reg::create_key(REG_ROOT_KEY, path, 0, KEY_READ);
+    Win32::Reg::enum_key(key, [&ret](Win32::tstring name) { ret.emplace_back(Bits_::decode_profile_name(name)); });
   }
   catch (Win32::Reg::ErrorCode &ex) {
     Log::debug(TEXT("cannot enum registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
@@ -521,30 +525,32 @@ static std::vector<Win32::tstring> enum_profile() {
   return ret;
 }
 
-// newName は存在していてはいけない。
-static Win32::tstring rename_profile(LPCTSTR oldName, LPCTSTR newName) {
-  auto path = make_regpath(TEXT(""));
+void delete_profile(Win32::StrPtr name) {
+  auto path = Bits_::make_regpath(TEXT(""));
   try {
-    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_READ);
-    Win32::Reg::rename_key(key, encode_profile_name(oldName).c_str(), encode_profile_name(newName).c_str());
-    return newName;
-  }
-  catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot rename \"%ls\" to \"%ls\": %hs(reason=%d)"), oldName, newName, ex.what(), ex.code);
-    return TEXT("");
-  }
-}
-
-static void delete_profile(LPCTSTR name) {
-  auto path = make_regpath(TEXT(""));
-  try {
-    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path.c_str(), 0, KEY_WRITE);
-    Win32::Reg::delete_tree(key, encode_profile_name(name).c_str());
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path, 0, KEY_WRITE);
+    Win32::Reg::delete_tree(key, Bits_::encode_profile_name(name));
   }
   catch (Win32::Reg::ErrorCode &ex) {
     Log::debug(TEXT("cannot delete \"%ls\": %hs(reason=%d, path=\"%ls\")"), name, ex.what(), ex.code, path.c_str());
   }
 }
+
+Win32::tstring rename_profile(Win32::StrPtr oldName, Win32::StrPtr newName) {
+  UmapitaRegistry::delete_profile(newName);
+  auto path = Bits_::make_regpath(TEXT(""));
+  try {
+    auto key = Win32::Reg::open_key(REG_ROOT_KEY, path, 0, KEY_READ);
+    Win32::Reg::rename_key(key, Bits_::encode_profile_name(oldName), Bits_::encode_profile_name(newName));
+    return newName.ptr;
+  }
+  catch (Win32::Reg::ErrorCode &ex) {
+    Log::debug(TEXT("cannot rename \"%ls\" to \"%ls\": %hs(reason=%d)"), oldName, newName, ex.what(), ex.code);
+    return oldName.ptr;
+  }
+}
+
+} // namespace UmapitaRegistry
 
 
 //
@@ -892,7 +898,7 @@ int open_message_box(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UI
 static bool fill_profile_to_combobox(Window cb) {
   ComboBox_ResetContent(cb.get());
 
-  auto ps = enum_profile();
+  auto ps = UmapitaRegistry::enum_profile();
   for (auto const &name : ps) {
     ComboBox_AddString(cb.get(), name.c_str());
   }
@@ -939,7 +945,7 @@ private:
         auto n = Win32::remove_ws_on_both_ends(window.get_item(IDC_SELECT_PROFILE).get_text());
         if (n.empty())
           return TRUE;
-        if (auto ps = enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
+        if (auto ps = UmapitaRegistry::enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
           auto hInst = window.get_instance();
           auto r = open_message_box(window,
                                     Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
@@ -1183,7 +1189,7 @@ static int save_as(Window dialog) {
     return IDCANCEL;
   }
   s.common.currentProfileName = profileName;
-  save_setting(s.common.currentProfileName.c_str(), s.currentProfile);
+  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
   s.common.isCurrentProfileChanged = false;
   return IDOK;
 }
@@ -1199,7 +1205,7 @@ static int save(Window dialog) {
     Log::debug(TEXT("unnecessary to save"));
     return IDOK;
   }
-  save_setting(s.common.currentProfileName.c_str(), s.currentProfile);
+  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
   s.common.isCurrentProfileChanged = false;
   return IDOK;
 }
@@ -1377,9 +1383,7 @@ static void init_main_controlls(Window dialog) {
                        Log::debug(TEXT("rename: not changed"));
                        return TRUE;
                      }
-                     delete_profile(newProfileName.c_str());
-                     rename_profile(s.common.currentProfileName.c_str(), newProfileName.c_str());
-                     s.common.currentProfileName = newProfileName;
+                     s.common.currentProfileName = UmapitaRegistry::rename_profile(s.common.currentProfileName, newProfileName);
                      update_profile(dialog);
                      return TRUE;
                    });
@@ -1398,7 +1402,7 @@ static void init_main_controlls(Window dialog) {
                      case IDCANCEL:
                        return TRUE;
                      }
-                     delete_profile(s.common.currentProfileName.c_str());
+                     UmapitaRegistry::delete_profile(s.common.currentProfileName);
                      s.common.currentProfileName = TEXT("");
                      s_isDialogChanged = true;
                      update_main_controlls(dialog);
@@ -1494,7 +1498,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     // disable close button / menu
     EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
     //
-    s_currentGlobalSetting = load_global_setting();
+    s_currentGlobalSetting = UmapitaRegistry::load_global_setting();
     init_main_controlls(dialog);
     register_handler(s_commandHandlerMap, IDC_HIDE,
                      [](Window dialog) {
@@ -1505,7 +1509,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     register_handler(s_commandHandlerMap, IDC_QUIT,
                      [](Window dialog) {
                        Log::debug(TEXT("IDC_QUIT received"));
-                       save_global_setting(s_currentGlobalSetting);
+                       UmapitaRegistry::save_global_setting(s_currentGlobalSetting);
                        delete_tasktray_icon(dialog);
                        dialog.kill_timer(TIMER_ID);
                        dialog.destroy();
@@ -1607,7 +1611,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     case IDOK: {
       Log::debug(TEXT("selected: %ls"), n.c_str());
       s_currentGlobalSetting.common.currentProfileName = n;
-      s_currentGlobalSetting.currentProfile = load_setting(n.c_str());
+      s_currentGlobalSetting.currentProfile = UmapitaRegistry::load_setting(n);
       s_currentGlobalSetting.common.isCurrentProfileChanged = false;
       break;
     }
