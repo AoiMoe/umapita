@@ -866,21 +866,19 @@ static void init_profile(Window dialog) {
                    });
 }
 
-template <typename Enum, std::size_t Num>
-static void update_radio_button_lock_status(Window dialog, const RadioButtonMap<Enum, Num> &m, bool isLocked) {
-  for ([[maybe_unused]] auto const &[tag, id] : m) {
-    dialog.get_item(id).enable(!isLocked);
-  }
-}
-
 static void update_per_orientation_lock_status(Window dialog, const PerOrientationSettingID &ids, bool isLocked) {
   auto set = [dialog, isLocked](auto id) { dialog.get_item(id).enable(!isLocked); };
+  auto set_radio = [dialog, isLocked](const auto &m) {
+                     for ([[maybe_unused]] auto const &[tag, id] : m) {
+                       dialog.get_item(id).enable(!isLocked);
+                     }
+                   };
   set(ids.monitorNumber);
   set(ids.isConsiderTaskbar.id);
-  update_radio_button_lock_status(dialog, ids.windowArea, isLocked);
+  set_radio(ids.windowArea);
   set(ids.size);
-  update_radio_button_lock_status(dialog, ids.axis, isLocked);
-  update_radio_button_lock_status(dialog, ids.origin, isLocked);
+  set_radio(ids.axis);
+  set_radio(ids.origin);
   set(ids.offsetX);
   set(ids.offsetY);
 }
