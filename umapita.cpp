@@ -19,65 +19,72 @@ UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clo
 
 
 //
-// ディスプレイモニタまわり
+// ディスプレイモニタを収集する
 //
-struct Monitor {
-  Win32::tstring name;
-  RECT whole;
-  RECT work;
-  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork) : name{aName}, whole{aWhole}, work{aWork} { }
-};
-using Monitors = std::vector<Monitor>;
+struct UmapitaMonitors {
+  struct Monitor {
+    Win32::tstring name;
+    RECT whole;
+    RECT work;
+    Monitor(LPCTSTR aName, RECT aWhole, RECT aWork) : name{aName}, whole{aWhole}, work{aWork} { }
+  };
 
-static Monitors get_monitors() {
-  std::vector<MONITORINFOEX> mis;
+private:
+  std::vector<Monitor> m_monitors;
 
-  EnumDisplayMonitors(nullptr, nullptr,
-                      [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) CALLBACK {
-                        auto &mis = *reinterpret_cast<std::vector<MONITORINFOEX> *>(lParam);
-                        auto mi = Win32::make_sized_pod<MONITORINFOEX>();
-                        GetMonitorInfo(hMonitor, &mi);
-                        Log::debug(TEXT("hMonitor=%p, szDevice=%ls, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
-                                   hMonitor, mi.szDevice,
-                                   mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
-                                   mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom,
-                                   mi.dwFlags);
-                        mis.emplace_back(mi);
-                        return TRUE;
-                      },
-                      reinterpret_cast<LPARAM>(&mis));
+public:
+  UmapitaMonitors() {
+    std::vector<MONITORINFOEX> mis;
 
-  Monitors ms;
-  // -1: whole virtual desktop
-  RECT whole;
-  whole.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-  whole.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
-  whole.right = whole.left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
-  whole.bottom = whole.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
-  ms.emplace_back(TEXT("<all monitors>"), whole, whole);
-  // 0: primary monitor
-  if (auto result = std::find_if(mis.begin(), mis.end(), [](auto const &mi) { return !!(mi.dwFlags & MONITORINFOF_PRIMARY); });
-      result == mis.end()) {
-    // not found
-    ms.emplace_back(TEXT("<primary>"), whole, whole);
-  } else {
-    ms.emplace_back(TEXT("<primary>"), result->rcMonitor, result->rcWork);
+    EnumDisplayMonitors(nullptr, nullptr,
+                        [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) CALLBACK {
+                          auto &mis = *reinterpret_cast<std::vector<MONITORINFOEX> *>(lParam);
+                          auto mi = Win32::make_sized_pod<MONITORINFOEX>();
+                          GetMonitorInfo(hMonitor, &mi);
+                          Log::debug(TEXT("hMonitor=%p, szDevice=%ls, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
+                                     hMonitor, mi.szDevice,
+                                     mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
+                                     mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom,
+                                     mi.dwFlags);
+                          mis.emplace_back(mi);
+                          return TRUE;
+                        },
+                        reinterpret_cast<LPARAM>(&mis));
+
+    // -1: whole virtual desktop
+    RECT whole;
+    whole.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    whole.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    whole.right = whole.left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    whole.bottom = whole.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    m_monitors.emplace_back(TEXT("<all monitors>"), whole, whole);
+    // 0: primary monitor
+    if (auto result = std::find_if(mis.begin(), mis.end(), [](auto const &mi) { return !!(mi.dwFlags & MONITORINFOF_PRIMARY); });
+        result == mis.end()) {
+      // not found
+      m_monitors.emplace_back(TEXT("<primary>"), whole, whole);
+    } else {
+      m_monitors.emplace_back(TEXT("<primary>"), result->rcMonitor, result->rcWork);
+    }
+    // 1-: physical monitors
+    for (auto &mi : mis)
+      m_monitors.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork);
   }
-  // 1-: monitors
-  for (auto &mi : mis)
-    ms.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork);
+  const Monitor *get_monitor_by_number(int monitorNumber) const {
+    auto mn = monitorNumber + 1;
 
-  return ms;
-}
+    if (mn < 0 || static_cast<size_t>(mn) >= m_monitors.size())
+      return nullptr;
 
-static const Monitor *get_monitor_by_number(const Monitors &ms, int monitorNumber) {
-  auto mn = monitorNumber + 1;
-
-  if (mn < 0 || static_cast<size_t>(mn) >= ms.size())
-    return nullptr;
-
-  return &ms[mn];
-}
+    return &m_monitors[mn];
+  }
+  template <typename Fn>
+  void enum_monitors(Fn fn) {
+    int index = -1;
+    for (auto const &m : m_monitors)
+      fn(index++, m);
+  }
+};
 
 
 //
@@ -209,7 +216,7 @@ static TargetStatus get_target_status(Win32::StrPtr winclass, Win32::StrPtr winn
   return {};
 }
 
-static TargetStatus adjust_target(TargetStatus ts, const Monitors &monitors, const UmapitaSetting::PerProfile &profile) {
+static TargetStatus adjust_target(TargetStatus ts, const UmapitaMonitors &monitors, const UmapitaSetting::PerProfile &profile) {
   if (ts.window && ts.window.is_visible()) {
     // ターゲットのジオメトリを更新する
     auto cW = Win32::width(ts.clientRect);
@@ -224,7 +231,7 @@ static TargetStatus adjust_target(TargetStatus ts, const Monitors &monitors, con
     auto ncH = wH - cH;
     const UmapitaSetting::PerOrientation &s = cW > cH ? profile.horizontal : profile.vertical;
 
-    auto maybeMonitor = get_monitor_by_number(monitors, s.monitorNumber);
+    auto maybeMonitor = monitors.get_monitor_by_number(s.monitorNumber);
     if (!maybeMonitor) {
       Log::warning(TEXT("invalid monitor number: %d"), s.monitorNumber);
       return ts;
@@ -604,7 +611,7 @@ void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m,
 
 static CommandHandlerMap s_commandHandlerMap;
 static CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
-static Monitors s_monitors;
+static UmapitaMonitors s_monitors;
 static TargetStatus s_lastTargetStatus;
 static bool s_isDialogChanged = false;
 
@@ -735,13 +742,14 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
                                               Log::debug(TEXT("selectMonitor received"));
                                               auto menu = Win32::create_popup_menu();
                                               int id = ids.selectMonitor.base;
-                                              int index = -1;
-                                              for (auto const &[name, whole, work] : s_monitors) {
-                                                auto const &rc = setting.isConsiderTaskbar ? work : whole;
-                                                AppendMenu(menu.get(), MF_STRING, id++,
-                                                           Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-                                                                           index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str()).c_str());
-                                              }
+                                              s_monitors.enum_monitors(
+                                                [&setting, &id, &menu](auto index, auto const &m) {
+                                                  auto const &[name, whole, work] = m;
+                                                  auto const &rc = setting.isConsiderTaskbar ? work : whole;
+                                                  AppendMenu(menu.get(), MF_STRING, id++,
+                                                             Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
+                                                                             index, rc.left, rc.top, rc.right, rc.bottom, name.c_str()).c_str());
+                                                });
                                               return std::make_pair(0 /*dummy*/, std::move(menu));
                                             }));
 }
@@ -1121,7 +1129,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     add_tasktray_icon(dialog, s_appIconSm.get());
     dialog.post(WM_TIMER, TIMER_ID, 0);
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
-    s_monitors = get_monitors();
+    s_monitors = UmapitaMonitors{};
     s_isDialogChanged = true;
     return TRUE;
   }
@@ -1198,7 +1206,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
 
   case WM_DISPLAYCHANGE:
-    s_monitors = get_monitors();
+    s_monitors = UmapitaMonitors{};
     return TRUE;
 
   case WM_SETFONT: {
