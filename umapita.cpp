@@ -181,44 +181,6 @@ public:
 // UI
 //
 
-static BOOL add_tasktray_icon(Window window, HICON hIcon) {
-  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
-  nid.hWnd = window.get();
-  nid.uID = TASKTRAY_ID;
-  nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-  nid.uCallbackMessage = WM_TASKTRAY;
-  nid.hIcon = hIcon;
-  LoadString(window.get_instance(), IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
-  return Shell_NotifyIcon(NIM_ADD, &nid);
-}
-
-static void delete_tasktray_icon(Window window) {
-  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
-  nid.hWnd = window.get();
-  nid.uID = TASKTRAY_ID;
-  Shell_NotifyIcon(NIM_DELETE, &nid);
-}
-
-static void show_popup_menu(Window window, BOOL isTray = FALSE) {
-  POINT point;
-  TPMPARAMS tpmp = Win32::make_sized_pod<TPMPARAMS>(), *pTpmp = nullptr;
-
-  if (isTray) {
-    if (auto shell = Window::find(TEXT("Shell_TrayWnd"), nullptr); shell) {
-      auto rect = shell.get_window_rect();
-      tpmp.rcExclude = rect;
-      pTpmp = &tpmp;
-    }
-  }
-
-  GetCursorPos(&point);
-  window.set_foreground();
-
-  auto menu = Win32::load_menu(window.get_instance(), MAKEINTRESOURCE(IDM_POPUP));
-  auto submenu = Win32::get_sub_menu(menu, 0);
-  TrackPopupMenuEx(submenu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
-}
-
 //
 // 監視対象ウィンドウの状態
 //
@@ -552,6 +514,48 @@ public:
 //
 // main dialog
 //
+
+//
+// タスクトレイアイコン
+//
+static BOOL add_tasktray_icon(Window window, HICON hIcon) {
+  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
+  nid.hWnd = window.get();
+  nid.uID = TASKTRAY_ID;
+  nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+  nid.uCallbackMessage = WM_TASKTRAY;
+  nid.hIcon = hIcon;
+  LoadString(window.get_instance(), IDS_TASKTRAY_TIP, nid.szTip, std::size(nid.szTip));
+  return Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+static void delete_tasktray_icon(Window window) {
+  auto nid = Win32::make_sized_pod<NOTIFYICONDATA>();
+  nid.hWnd = window.get();
+  nid.uID = TASKTRAY_ID;
+  Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+static void show_popup_menu(Window window, BOOL isTray = FALSE) {
+  POINT point;
+  TPMPARAMS tpmp = Win32::make_sized_pod<TPMPARAMS>(), *pTpmp = nullptr;
+
+  if (isTray) {
+    if (auto shell = Window::find(TEXT("Shell_TrayWnd"), nullptr); shell) {
+      auto rect = shell.get_window_rect();
+      tpmp.rcExclude = rect;
+      pTpmp = &tpmp;
+    }
+  }
+
+  GetCursorPos(&point);
+  window.set_foreground();
+
+  auto menu = Win32::load_menu(window.get_instance(), MAKEINTRESOURCE(IDM_POPUP));
+  auto submenu = Win32::get_sub_menu(menu, 0);
+  TrackPopupMenuEx(submenu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
+}
+
 
 //
 // ダイアログボックス上のコントロールと設定のマッピング
