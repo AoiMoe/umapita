@@ -380,19 +380,6 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
   if (!isSettingChanged && ts == lastTargetStatus)
     return {false, {}};
 
-  if (KeyHook::is_available()) {
-    bool isEn = KeyHook::is_enabled();
-    if (!isEn && ts.window && setting.common.isEnabled) {
-      // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
-      auto r = KeyHook::enable(dialog.get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
-      Log::info(TEXT("enable_keyhook %hs"), r ? "succeeded":"failed");
-    } else if (isEn && (!setting.common.isEnabled || !ts.window)) {
-      // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
-      auto r = KeyHook::disable();
-      Log::info(TEXT("disable_keyhook %hs"), r ? "succeeded":"failed");
-    }
-  }
-
   lastTargetStatus = ts;
 
   if (setting.common.isEnabled && ts.window && ts.window.is_visible()) {
@@ -1267,6 +1254,19 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
       update_target_status_text(dialog, r.targetStatus);
       update_lock_status(dialog);
       set_profile_text(dialog);
+      // キーフックの調整
+      if (KeyHook::is_available()) {
+        bool isEn = KeyHook::is_enabled();
+        if (!isEn && r.targetStatus.window && s_currentGlobalSetting.common.isEnabled) {
+          // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
+          auto ret = KeyHook::enable(dialog.get(), WM_KEYHOOK, r.targetStatus.window.get_thread_process_id().first);
+          Log::info(TEXT("enable_keyhook %hs"), ret ? "succeeded":"failed");
+        } else if (isEn && (!s_currentGlobalSetting.common.isEnabled || !r.targetStatus.window)) {
+          // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
+          auto ret = KeyHook::disable();
+          Log::info(TEXT("disable_keyhook %hs"), ret ? "succeeded":"failed");
+        }
+      }
     }
     s_isDialogChanged = false;
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
