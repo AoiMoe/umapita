@@ -591,7 +591,7 @@ static void show_popup_menu(Window window, BOOL isTray = FALSE) {
 
   auto menu = Win32::load_menu(window.get_instance(), MAKEINTRESOURCE(IDM_POPUP));
   auto submenu = Win32::get_sub_menu(menu, 0);
-  TrackPopupMenuEx(submenu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
+  TrackPopupMenuEx(submenu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
 }
 
 static void update_monitors() {
@@ -650,12 +650,11 @@ static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
   return menu;
 }
 
-template <typename MenuType>
-void show_button_menu(Window window, const MenuType &menu) {
+static void show_button_menu(Window window, Win32::MenuHandle menu) {
   auto tpmp = Win32::make_sized_pod<TPMPARAMS>();
   auto rect = window.get_window_rect();
   tpmp.rcExclude = rect;
-  TrackPopupMenuEx(menu.get(), TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, window.get_parent().get(), &tpmp);
+  TrackPopupMenuEx(menu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, rect.right, rect.top, window.get_parent().get(), &tpmp);
 }
 
 static const Monitor *get_current_monitor(int monitorNumber) {
@@ -1299,7 +1298,7 @@ static void update_main_controlls(Window dialog) {
   update_lock_status(dialog);
 }
 
-static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu(Window dialog) {
+static std::pair<Win32::Menu, Win32::MenuHandle> create_profile_menu(Window dialog) {
   auto menu = Win32::load_menu(dialog.get_instance(), MAKEINTRESOURCE(IDM_PROFILE));
   auto submenu = Win32::get_sub_menu(menu, 0);
   auto const &s = s_currentGlobalSetting;
@@ -1308,23 +1307,23 @@ static std::pair<Win32::Menu, Win32::BorrowedMenu> create_profile_menu(Window di
   auto mii = Win32::make_sized_pod<MENUITEMINFO>();
   mii.fMask = MIIM_STATE;
   mii.fState = s.currentProfile.isLocked ? MFS_CHECKED : 0;
-  SetMenuItemInfo(submenu.get(), IDC_LOCK, false, &mii);
+  SetMenuItemInfo(submenu.hMenu, IDC_LOCK, false, &mii);
 
   // 無名プロファイルでは IDC_RENAME と IDC_DELETE を無効にする
   mii.fMask = MIIM_STATE;
   mii.fState = s.common.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.get(), IDC_RENAME, false, &mii);
-  SetMenuItemInfo(submenu.get(), IDC_DELETE, false, &mii);
+  SetMenuItemInfo(submenu.hMenu, IDC_RENAME, false, &mii);
+  SetMenuItemInfo(submenu.hMenu, IDC_DELETE, false, &mii);
 
   // 名前付きかつ無変更ならば IDC_SAVE を無効にする
   mii.fMask = MIIM_STATE;
   mii.fState = !s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.get(), IDC_SAVE, false, &mii);
+  SetMenuItemInfo(submenu.hMenu, IDC_SAVE, false, &mii);
 
   // 無名かつ無変更ならば IDC_NEW を無効にする
   mii.fMask = MIIM_STATE;
   mii.fState = s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.get(), IDC_NEW, false, &mii);
+  SetMenuItemInfo(submenu.hMenu, IDC_NEW, false, &mii);
 
   return std::make_pair(std::move(menu), std::move(submenu));
 }

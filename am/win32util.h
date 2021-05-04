@@ -343,7 +343,7 @@ inline Menu load_menu(HINSTANCE hInstance, LPCTSTR lpMenu) {
   return Menu{LoadMenu(hInstance, lpMenu)};
 }
 
-MenuHandle get_sub_menu(MenuHandle m, int n) {
+inline MenuHandle get_sub_menu(MenuHandle m, int n) {
   return MenuHandle{throw_if<Win32ErrorCode, HMENU, nullptr>(GetSubMenu(m.hMenu, n))};
 }
 
