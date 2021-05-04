@@ -193,9 +193,12 @@ inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
   using namespace AM::Win32::Op;
   return lhs.window == rhs.window && (!lhs.window || (lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect));
 }
+inline bool operator != (const TargetStatus &lhs, const TargetStatus &rhs) {
+  return !(lhs == rhs);
+}
 
-static TargetStatus get_target_information() {
-  if (auto target = Window::find(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); target) {
+static TargetStatus get_target_status(Win32::StrPtr winclass, Win32::StrPtr winname) {
+  if (auto target = Window::find(winclass, winname); target) {
     try {
       auto wi = target.get_info();
       return {target, wi.rcWindow, wi.rcClient};
@@ -206,26 +209,8 @@ static TargetStatus get_target_information() {
   return {};
 }
 
-struct AdjustTargetResult {
-  bool isChanged;
-  TargetStatus targetStatus;
-};
-
-static AdjustTargetResult adjust_target(const Monitors &monitors, bool isSettingChanged) {
-  static TargetStatus lastTargetStatus;
-  auto const &setting = s_currentGlobalSetting;
-  auto const &profile = setting.currentProfile;
-
-  // ターゲット情報の更新
-  TargetStatus ts = get_target_information();
-
-  // ターゲットも設定も変更されていない場合は終了
-  if (!isSettingChanged && ts == lastTargetStatus)
-    return {false, {}};
-
-  lastTargetStatus = ts;
-
-  if (setting.common.isEnabled && ts.window && ts.window.is_visible()) {
+static TargetStatus adjust_target(TargetStatus ts, const Monitors &monitors, const UmapitaSetting::PerProfile &profile) {
+  if (ts.window && ts.window.is_visible()) {
     // ターゲットのジオメトリを更新する
     auto cW = Win32::width(ts.clientRect);
     auto cH = Win32::height(ts.clientRect);
@@ -242,7 +227,7 @@ static AdjustTargetResult adjust_target(const Monitors &monitors, bool isSetting
     auto maybeMonitor = get_monitor_by_number(monitors, s.monitorNumber);
     if (!maybeMonitor) {
       Log::warning(TEXT("invalid monitor number: %d"), s.monitorNumber);
-      return {true, lastTargetStatus};
+      return ts;
     }
 
     auto const & mR = s.isConsiderTaskbar ? maybeMonitor->work : maybeMonitor->whole;
@@ -334,18 +319,18 @@ static AdjustTargetResult adjust_target(const Monitors &monitors, bool isSetting
         // SetWindowPos に失敗
         Log::error(TEXT("SetWindowPos failed: %lu\n"), ex.code);
         if (ex.code == ERROR_ACCESS_DENIED) {
-          // 権限がない場合、どうせ次も失敗するので lastTargetStatus を ts のままにしておく。
+          // 権限がない場合、どうせ次も失敗するので ts を変更前の値のままにしておく。
           // これで余計な更新が走らなくなる。
           willingToUpdate = false;
         }
       }
       if (willingToUpdate) {
-        lastTargetStatus.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
-        lastTargetStatus.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
+        ts.windowRect = RECT{idealX, idealY, idealX+idealW, idealY+idealH};
+        ts.clientRect = RECT{idealCX, idealCY, idealCX+idealCW, idealCY+idealCH};
       }
     }
   }
-  return {true, lastTargetStatus};
+  return ts;
 }
 
 //
@@ -672,8 +657,9 @@ void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m,
 }
 
 static CommandHandlerMap s_commandHandlerMap;
-CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
-Monitors s_monitors;
+static CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
+static Monitors s_monitors;
+static TargetStatus s_lastTargetStatus;
 static bool s_isDialogChanged = false;
 
 template <typename Enum, std::size_t Num>
@@ -1243,25 +1229,32 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
 
   case WM_TIMER:
-    if (auto r = adjust_target(s_monitors, s_isDialogChanged); r.isChanged) {
-      update_target_status_text(dialog, r.targetStatus);
+    if (s_isDialogChanged) {
       update_lock_status(dialog);
       set_profile_text(dialog);
+      s_lastTargetStatus = TargetStatus{};
+      s_isDialogChanged = false;
+    }
+    if (auto ts = get_target_status(TARGET_WINDOW_CLASS, TARGET_WINDOW_NAME); ts != s_lastTargetStatus) {
+      if (s_currentGlobalSetting.common.isEnabled)
+        s_lastTargetStatus = adjust_target(ts, s_monitors, s_currentGlobalSetting.currentProfile);
+      else
+        s_lastTargetStatus = ts;
+      update_target_status_text(dialog, s_lastTargetStatus);
       // キーフックの調整
       if (KeyHook::is_available()) {
         bool isEn = KeyHook::is_enabled();
-        if (!isEn && r.targetStatus.window && s_currentGlobalSetting.common.isEnabled) {
+        if (!isEn && ts.window && s_currentGlobalSetting.common.isEnabled) {
           // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
-          auto ret = KeyHook::enable(dialog.get(), WM_KEYHOOK, r.targetStatus.window.get_thread_process_id().first);
+          auto ret = KeyHook::enable(dialog.get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
           Log::info(TEXT("enable_keyhook %hs"), ret ? "succeeded":"failed");
-        } else if (isEn && (!s_currentGlobalSetting.common.isEnabled || !r.targetStatus.window)) {
+        } else if (isEn && (!s_currentGlobalSetting.common.isEnabled || !ts.window)) {
           // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
           auto ret = KeyHook::disable();
           Log::info(TEXT("disable_keyhook %hs"), ret ? "succeeded":"failed");
         }
       }
     }
-    s_isDialogChanged = false;
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
 
