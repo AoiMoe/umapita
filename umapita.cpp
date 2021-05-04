@@ -5,6 +5,7 @@
 #include "am/win32handler.h"
 #include "umapita_def.h"
 #include "umapita_res.h"
+#include "umapita_setting.h"
 #include "umapita_keyhook.h"
 
 namespace Win32 = AM::Win32;
@@ -24,6 +25,7 @@ UINT s_msgTaskbarCreated = 0;
 Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
 Monitors s_monitors;
 HFONT s_hFontMainDialog = nullptr;
+UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
 //
 // 監視対象ウィンドウの状態
@@ -37,74 +39,6 @@ inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
   using namespace AM::Win32::Op;
   return lhs.window == rhs.window && (!lhs.window || (lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect));
 }
-
-
-//
-// 設定値
-//
-namespace UmapitaSetting {
-
-struct PerOrientation {
-  LONG monitorNumber = 0;
-  bool isConsiderTaskbar;
-  enum WindowArea { Whole, Client } windowArea;
-  LONG size = 0;
-  enum SizeAxis { Width, Height } axis = Height;
-  enum Origin { N, S, W, E, NW, NE, SW, SE, C } origin = N;
-  LONG offsetX = 0, offsetY = 0;
-  LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
-};
-
-struct PerProfile {
-  bool isLocked = false;
-  // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
-  PerOrientation verticalSetting{
-    .isConsiderTaskbar = true,
-    .windowArea = PerOrientation::Whole,
-    .aspectX=9,
-    .aspectY=16
-  };
-  PerOrientation horizontalSetting{
-    .isConsiderTaskbar = false,
-    .windowArea = PerOrientation::Client,
-    .aspectX=16,
-    .aspectY=9
-  };
-};
-
-constexpr PerProfile DEFAULT_PER_PROFILE{};
-
-template <typename StringType>
-struct GlobalCommonT {
-  bool isEnabled = true;
-  bool isCurrentProfileChanged = false;
-  StringType currentProfileName{TEXT("")};  // XXX: gcc10 の libstdc++ でも basic_string は constexpr 化されてない
-  template <typename T>
-  GlobalCommonT<T> clone() const {
-    return GlobalCommonT<T>{isEnabled, isCurrentProfileChanged, currentProfileName};
-  }
-};
-using GlobalCommon = GlobalCommonT<Win32::tstring>;
-
-constexpr GlobalCommonT<LPCTSTR> DEFAULT_GLOBAL_COMMON{};
-
-
-template <typename StringType>
-struct GlobalT {
-  GlobalCommonT<StringType> common{DEFAULT_GLOBAL_COMMON};
-  PerProfile currentProfile{DEFAULT_PER_PROFILE};
-  template <typename T>
-  GlobalT<T> clone() const {
-    return GlobalT<T>{common.template clone<T>(), currentProfile};
-  }
-};
-using Global = GlobalT<Win32::tstring>;
-
-constexpr GlobalT<LPCTSTR> DEFAULT_GLOBAL{};
-
-} // namespace UmapitaSetting
-
-UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
 //
 // ダイアログボックス上のコントロールと設定のマッピング
