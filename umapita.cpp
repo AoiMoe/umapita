@@ -92,7 +92,7 @@ public:
 //
 // WndProc をオーバライドしていくつかの WM を置き換える
 //
-class CustomGroupBox {
+class UmapitaCustomGroupBox {
   Window m_window;
   WNDPROC m_lpPrevWndFunc = nullptr;
   bool m_isSelected = false;
@@ -100,7 +100,7 @@ class CustomGroupBox {
   //
   static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     Window window{hWnd};
-    auto self = window.get_user_data<CustomGroupBox *>();
+    auto self = window.get_user_data<UmapitaCustomGroupBox *>();
     switch (msg) {
     case WM_PAINT:
       AM::try_or_void([self, window]() { self->on_paint(window); });
@@ -159,7 +159,7 @@ class CustomGroupBox {
     }
   }
 public:
-  CustomGroupBox() { }
+  UmapitaCustomGroupBox() { }
   void override_window_proc(Window window) {
     m_window = window;
     m_lpPrevWndFunc = m_window.get_wndproc();
@@ -610,7 +610,7 @@ void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m,
 }
 
 static CommandHandlerMap s_commandHandlerMap;
-static CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
+static UmapitaCustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
 static UmapitaMonitors s_monitors;
 static TargetStatus s_lastTargetStatus;
 static bool s_isDialogChanged = false;
