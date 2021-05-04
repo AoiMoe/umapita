@@ -182,10 +182,6 @@ public:
 
 
 //
-// UI
-//
-
-//
 // 監視対象ウィンドウの状態
 //
 struct TargetStatus {
