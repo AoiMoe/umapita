@@ -28,113 +28,6 @@ Monitors s_monitors;
 HFONT s_hFontMainDialog = nullptr;
 UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
-//
-// 監視対象ウィンドウの状態
-//
-struct TargetStatus {
-  Window window;
-  RECT windowRect{0, 0, 0, 0};
-  RECT clientRect{0, 0, 0, 0};
-};
-inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
-  using namespace AM::Win32::Op;
-  return lhs.window == rhs.window && (!lhs.window || (lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect));
-}
-
-//
-// ダイアログボックス上のコントロールと設定のマッピング
-//
-template <typename Enum>
-struct CheckButtonMap {
-  Enum unchecked;
-  Enum checked;
-  int id;
-};
-
-constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
-  return CheckButtonMap<bool>{false, true, id};
-}
-
-template <typename Enum, std::size_t Num>
-using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
-
-struct SelectMonitorMap {
-  int id;
-  int base;
-};
-
-struct PerOrientationSettingID {
-  int monitorNumber;
-  CheckButtonMap<bool> isConsiderTaskbar;
-  RadioButtonMap<UmapitaSetting::PerOrientation::WindowArea, 2> windowArea;
-  int size;
-  RadioButtonMap<UmapitaSetting::PerOrientation::SizeAxis, 2> axis;
-  RadioButtonMap<UmapitaSetting::PerOrientation::Origin, 9> origin;
-  int offsetX, offsetY;
-  SelectMonitorMap selectMonitor;
-};
-
-constexpr PerOrientationSettingID VERTICAL_SETTING_ID = {
-  // monitorNumber
-  IDC_V_MONITOR_NUMBER,
-  // isConsiderTaskbar
-  make_bool_check_button_map(IDC_V_IS_CONSIDER_TASKBAR),
-  // windowArea
-  {{{UmapitaSetting::PerOrientation::Whole, IDC_V_WHOLE_AREA},
-    {UmapitaSetting::PerOrientation::Client, IDC_V_CLIENT_AREA}}},
-  // size
-  IDC_V_SIZE,
-  // axis
-  {{{UmapitaSetting::PerOrientation::Width, IDC_V_AXIS_WIDTH},
-    {UmapitaSetting::PerOrientation::Height, IDC_V_AXIS_HEIGHT}}},
-  // origin
-  {{{UmapitaSetting::PerOrientation::N, IDC_V_ORIGIN_N},
-    {UmapitaSetting::PerOrientation::S, IDC_V_ORIGIN_S},
-    {UmapitaSetting::PerOrientation::W, IDC_V_ORIGIN_W},
-    {UmapitaSetting::PerOrientation::E, IDC_V_ORIGIN_E},
-    {UmapitaSetting::PerOrientation::NW, IDC_V_ORIGIN_NW},
-    {UmapitaSetting::PerOrientation::NE, IDC_V_ORIGIN_NE},
-    {UmapitaSetting::PerOrientation::SW, IDC_V_ORIGIN_SW},
-    {UmapitaSetting::PerOrientation::SE, IDC_V_ORIGIN_SE},
-    {UmapitaSetting::PerOrientation::C, IDC_V_ORIGIN_C}}},
-  // offsetX
-  IDC_V_OFFSET_X,
-  // offsetY
-  IDC_V_OFFSET_Y,
-  // selectMonitor
-  {IDC_V_SELECT_MONITORS, IDM_V_MONITOR_BASE},
-};
-constexpr PerOrientationSettingID HORIZONTAL_SETTING_ID = {
-  // monitorNumber
-  IDC_H_MONITOR_NUMBER,
-  // isConsiderTaskbar
-  make_bool_check_button_map(IDC_H_IS_CONSIDER_TASKBAR),
-  // windowArea
-  {{{UmapitaSetting::PerOrientation::Whole, IDC_H_WHOLE_AREA},
-    {UmapitaSetting::PerOrientation::Client, IDC_H_CLIENT_AREA}}},
-  // size
-  IDC_H_SIZE,
-  // axis
-  {{{UmapitaSetting::PerOrientation::Width, IDC_H_AXIS_WIDTH},
-    {UmapitaSetting::PerOrientation::Height, IDC_H_AXIS_HEIGHT}}},
-  // origin
-  {{{UmapitaSetting::PerOrientation::N, IDC_H_ORIGIN_N},
-    {UmapitaSetting::PerOrientation::S, IDC_H_ORIGIN_S},
-    {UmapitaSetting::PerOrientation::W, IDC_H_ORIGIN_W},
-    {UmapitaSetting::PerOrientation::E, IDC_H_ORIGIN_E},
-    {UmapitaSetting::PerOrientation::NW, IDC_H_ORIGIN_NW},
-    {UmapitaSetting::PerOrientation::NE, IDC_H_ORIGIN_NE},
-    {UmapitaSetting::PerOrientation::SW, IDC_H_ORIGIN_SW},
-    {UmapitaSetting::PerOrientation::SE, IDC_H_ORIGIN_SE},
-    {UmapitaSetting::PerOrientation::C, IDC_H_ORIGIN_C}}},
-  // offsetX
-  IDC_H_OFFSET_X,
-  // offsetY
-  IDC_H_OFFSET_Y,
-  // selectMonitor
-  {IDC_H_SELECT_MONITORS, IDM_H_MONITOR_BASE},
-};
-
 
 //
 // カスタムグループボックス
@@ -349,6 +242,19 @@ static const Monitor *get_current_monitor(int monitorNumber) {
     return NULL;
 
   return &s_monitors[mn];
+}
+
+//
+// 監視対象ウィンドウの状態
+//
+struct TargetStatus {
+  Window window;
+  RECT windowRect{0, 0, 0, 0};
+  RECT clientRect{0, 0, 0, 0};
+};
+inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
+  using namespace AM::Win32::Op;
+  return lhs.window == rhs.window && (!lhs.window || (lhs.windowRect == rhs.windowRect && lhs.clientRect == rhs.clientRect));
 }
 
 static TargetStatus get_target_information() {
@@ -671,6 +577,102 @@ public:
 //
 // main dialog
 //
+
+//
+// ダイアログボックス上のコントロールと設定のマッピング
+//
+template <typename Enum>
+struct CheckButtonMap {
+  Enum unchecked;
+  Enum checked;
+  int id;
+};
+
+constexpr CheckButtonMap<bool> make_bool_check_button_map(int id) {
+  return CheckButtonMap<bool>{false, true, id};
+}
+
+template <typename Enum, std::size_t Num>
+using RadioButtonMap = std::array<std::pair<Enum, int>, Num>;
+
+struct SelectMonitorMap {
+  int id;
+  int base;
+};
+
+struct PerOrientationSettingID {
+  int monitorNumber;
+  CheckButtonMap<bool> isConsiderTaskbar;
+  RadioButtonMap<UmapitaSetting::PerOrientation::WindowArea, 2> windowArea;
+  int size;
+  RadioButtonMap<UmapitaSetting::PerOrientation::SizeAxis, 2> axis;
+  RadioButtonMap<UmapitaSetting::PerOrientation::Origin, 9> origin;
+  int offsetX, offsetY;
+  SelectMonitorMap selectMonitor;
+};
+
+constexpr PerOrientationSettingID VERTICAL_SETTING_ID = {
+  // monitorNumber
+  IDC_V_MONITOR_NUMBER,
+  // isConsiderTaskbar
+  make_bool_check_button_map(IDC_V_IS_CONSIDER_TASKBAR),
+  // windowArea
+  {{{UmapitaSetting::PerOrientation::Whole, IDC_V_WHOLE_AREA},
+    {UmapitaSetting::PerOrientation::Client, IDC_V_CLIENT_AREA}}},
+  // size
+  IDC_V_SIZE,
+  // axis
+  {{{UmapitaSetting::PerOrientation::Width, IDC_V_AXIS_WIDTH},
+    {UmapitaSetting::PerOrientation::Height, IDC_V_AXIS_HEIGHT}}},
+  // origin
+  {{{UmapitaSetting::PerOrientation::N, IDC_V_ORIGIN_N},
+    {UmapitaSetting::PerOrientation::S, IDC_V_ORIGIN_S},
+    {UmapitaSetting::PerOrientation::W, IDC_V_ORIGIN_W},
+    {UmapitaSetting::PerOrientation::E, IDC_V_ORIGIN_E},
+    {UmapitaSetting::PerOrientation::NW, IDC_V_ORIGIN_NW},
+    {UmapitaSetting::PerOrientation::NE, IDC_V_ORIGIN_NE},
+    {UmapitaSetting::PerOrientation::SW, IDC_V_ORIGIN_SW},
+    {UmapitaSetting::PerOrientation::SE, IDC_V_ORIGIN_SE},
+    {UmapitaSetting::PerOrientation::C, IDC_V_ORIGIN_C}}},
+  // offsetX
+  IDC_V_OFFSET_X,
+  // offsetY
+  IDC_V_OFFSET_Y,
+  // selectMonitor
+  {IDC_V_SELECT_MONITORS, IDM_V_MONITOR_BASE},
+};
+constexpr PerOrientationSettingID HORIZONTAL_SETTING_ID = {
+  // monitorNumber
+  IDC_H_MONITOR_NUMBER,
+  // isConsiderTaskbar
+  make_bool_check_button_map(IDC_H_IS_CONSIDER_TASKBAR),
+  // windowArea
+  {{{UmapitaSetting::PerOrientation::Whole, IDC_H_WHOLE_AREA},
+    {UmapitaSetting::PerOrientation::Client, IDC_H_CLIENT_AREA}}},
+  // size
+  IDC_H_SIZE,
+  // axis
+  {{{UmapitaSetting::PerOrientation::Width, IDC_H_AXIS_WIDTH},
+    {UmapitaSetting::PerOrientation::Height, IDC_H_AXIS_HEIGHT}}},
+  // origin
+  {{{UmapitaSetting::PerOrientation::N, IDC_H_ORIGIN_N},
+    {UmapitaSetting::PerOrientation::S, IDC_H_ORIGIN_S},
+    {UmapitaSetting::PerOrientation::W, IDC_H_ORIGIN_W},
+    {UmapitaSetting::PerOrientation::E, IDC_H_ORIGIN_E},
+    {UmapitaSetting::PerOrientation::NW, IDC_H_ORIGIN_NW},
+    {UmapitaSetting::PerOrientation::NE, IDC_H_ORIGIN_NE},
+    {UmapitaSetting::PerOrientation::SW, IDC_H_ORIGIN_SW},
+    {UmapitaSetting::PerOrientation::SE, IDC_H_ORIGIN_SE},
+    {UmapitaSetting::PerOrientation::C, IDC_H_ORIGIN_C}}},
+  // offsetX
+  IDC_H_OFFSET_X,
+  // offsetY
+  IDC_H_OFFSET_Y,
+  // selectMonitor
+  {IDC_H_SELECT_MONITORS, IDM_H_MONITOR_BASE},
+};
+
+
 namespace Handler = AM::Win32::Handler;
 using CommandHandlerMap = Handler::Map<int, Handler::DialogMessageTraits>;
 
@@ -847,55 +849,6 @@ static void update_profile(Window dialog) {
   set_profile_text(dialog);
 }
 
-static int save_as(Window dialog) {
-  auto &s = s_currentGlobalSetting;
-  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName);
-  if (ret == IDCANCEL) {
-    Log::debug(TEXT("save as: canceled"));
-    return IDCANCEL;
-  }
-  s.common.currentProfileName = profileName;
-  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
-  s.common.isCurrentProfileChanged = false;
-  return IDOK;
-}
-
-static int save(Window dialog) {
-  auto &s = s_currentGlobalSetting;
-  Log::debug(TEXT("IDC_SAVE received"));
-
-  if (s.common.currentProfileName.empty())
-    return save_as(dialog);
-
-  if (!s.common.isCurrentProfileChanged) {
-    Log::debug(TEXT("unnecessary to save"));
-    return IDOK;
-  }
-  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
-  s.common.isCurrentProfileChanged = false;
-  return IDOK;
-}
-
-static int confirm_save(Window dialog) {
-  if (!s_currentGlobalSetting.common.isCurrentProfileChanged) {
-    Log::debug(TEXT("unnecessary to save"));
-    return IDOK;
-  }
-  dialog.show(SW_SHOW);
-  auto hInst = dialog.get_instance();
-  auto ret = open_message_box(dialog,
-                              Win32::load_string(hInst, IDS_CONFIRM_SAVE),
-                              Win32::load_string(hInst, IDS_CONFIRM),
-                              MB_YESNOCANCEL);
-  switch (ret) {
-  case IDYES:
-    return save(dialog);
-  case IDNO:
-    return IDOK;
-  }
-  return IDCANCEL;
-}
-
 static void select_profile(Window dialog, int n) {
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
   auto len = ComboBox_GetLBTextLen(item.get(), n);
@@ -998,6 +951,55 @@ static std::pair<Win32::Menu, Win32::MenuHandle> create_profile_menu(Window dial
   SetMenuItemInfo(submenu.hMenu, IDC_NEW, false, &mii);
 
   return std::make_pair(std::move(menu), std::move(submenu));
+}
+
+static int save_as(Window dialog) {
+  auto &s = s_currentGlobalSetting;
+  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName);
+  if (ret == IDCANCEL) {
+    Log::debug(TEXT("save as: canceled"));
+    return IDCANCEL;
+  }
+  s.common.currentProfileName = profileName;
+  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
+  s.common.isCurrentProfileChanged = false;
+  return IDOK;
+}
+
+static int save(Window dialog) {
+  auto &s = s_currentGlobalSetting;
+  Log::debug(TEXT("IDC_SAVE received"));
+
+  if (s.common.currentProfileName.empty())
+    return save_as(dialog);
+
+  if (!s.common.isCurrentProfileChanged) {
+    Log::debug(TEXT("unnecessary to save"));
+    return IDOK;
+  }
+  UmapitaRegistry::save_setting(s.common.currentProfileName, s.currentProfile);
+  s.common.isCurrentProfileChanged = false;
+  return IDOK;
+}
+
+static int confirm_save(Window dialog) {
+  if (!s_currentGlobalSetting.common.isCurrentProfileChanged) {
+    Log::debug(TEXT("unnecessary to save"));
+    return IDOK;
+  }
+  dialog.show(SW_SHOW);
+  auto hInst = dialog.get_instance();
+  auto ret = open_message_box(dialog,
+                              Win32::load_string(hInst, IDS_CONFIRM_SAVE),
+                              Win32::load_string(hInst, IDS_CONFIRM),
+                              MB_YESNOCANCEL);
+  switch (ret) {
+  case IDYES:
+    return save(dialog);
+  case IDNO:
+    return IDOK;
+  }
+  return IDCANCEL;
 }
 
 static void init_main_controlls(Window dialog) {
