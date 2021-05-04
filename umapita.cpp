@@ -336,7 +336,7 @@ static TargetStatus adjust_target(TargetStatus ts, const Monitors &monitors, con
 //
 // オーナーウィンドウの真ん中にポップアップウィンドウを配置する
 //
-void center_popup(Window owner, Window popup) {
+void center_popup(Window popup, Window owner) {
   auto rcOwner = owner.get_window_rect();
   auto rcPopup = popup.get_window_rect();
   auto w = Win32::width(rcPopup);
@@ -374,7 +374,7 @@ int open_message_box_in_center(Window owner, Win32::StrPtr text, Win32::StrPtr c
                                if (code == HCBT_ACTIVATE) {
                                  UnhookWindowsHookEx(hHook);
                                  s_hHook = nullptr;
-                                 center_popup(s_owner, Window::from(wParam));
+                                 center_popup(Window::from(wParam), s_owner);
                                }
                                return CallNextHookEx(hHook, code, wParam, lParam);
                              },
@@ -424,7 +424,7 @@ private:
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       window.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()));
-      center_popup(m_owner, window);
+      center_popup(window, m_owner);
       return TRUE;
     }
 
