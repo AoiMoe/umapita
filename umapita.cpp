@@ -389,15 +389,12 @@ int open_message_box(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UI
 // 名前を付けて保存する or リネーム
 //
 
-static bool fill_profile_to_combobox(Window cb) {
+static void fill_string_list_to_combobox(Window cb, const std::vector<Win32::tstring> ss) {
   ComboBox_ResetContent(cb.get());
 
-  auto ps = UmapitaRegistry::enum_profile();
-  for (auto const &name : ps) {
+  for (auto const &name : ss) {
     ComboBox_AddString(cb.get(), name.c_str());
   }
-
-  return !ps.empty();
 }
 
 struct SaveDialogBox {
@@ -421,7 +418,7 @@ private:
     switch (msg) {
     case WM_INITDIALOG: {
       auto hInst = window.get_instance();
-      fill_profile_to_combobox(window.get_item(IDC_SELECT_PROFILE));
+      fill_string_list_to_combobox(window.get_item(IDC_SELECT_PROFILE), UmapitaRegistry::enum_profile());
       window.get_item(IDC_SELECT_PROFILE).set_text(m_profileName);
       window.get_item(IDOK).enable(false);
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
@@ -820,9 +817,10 @@ static void update_profile_text(Window dialog) {
 
 static void update_profile(Window dialog) {
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
-  auto isEnabled = fill_profile_to_combobox(item);
+  auto ps = UmapitaRegistry::enum_profile();
 
-  item.enable(isEnabled);
+  fill_string_list_to_combobox(item, ps);
+  item.enable(!ps.empty());
   update_profile_text(dialog);
 }
 
