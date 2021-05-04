@@ -13,18 +13,8 @@ namespace Win32 = AM::Win32;
 using AM::Log;
 using Win32::Window;
 
-struct Monitor {
-  Win32::tstring name;
-  RECT whole;
-  RECT work;
-public:
-  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork) : name{aName}, whole{aWhole}, work{aWork} { }
-};
-using Monitors = std::vector<Monitor>;
-
 UINT s_msgTaskbarCreated = 0;
 Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
-Monitors s_monitors;
 HFONT s_hFontMainDialog = nullptr;
 UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
@@ -172,7 +162,18 @@ static void show_popup_menu(Window window, BOOL isTray = FALSE) {
   TrackPopupMenuEx(submenu.hMenu, TPM_LEFTALIGN | TPM_LEFTBUTTON, point.x, point.y, window.get(), pTpmp);
 }
 
-static void update_monitors() {
+//
+// ディスプレイモニタまわりを扱う関数
+//
+struct Monitor {
+  Win32::tstring name;
+  RECT whole;
+  RECT work;
+  Monitor(LPCTSTR aName, RECT aWhole, RECT aWork) : name{aName}, whole{aWhole}, work{aWork} { }
+};
+using Monitors = std::vector<Monitor>;
+
+static Monitors get_monitors() {
   std::vector<MONITORINFOEX> mis;
 
   EnumDisplayMonitors(nullptr, nullptr,
@@ -210,15 +211,24 @@ static void update_monitors() {
   for (auto &mi : mis)
     ms.emplace_back(mi.szDevice, mi.rcMonitor, mi.rcWork);
 
-  s_monitors = std::move(ms);
+  return ms;
 }
 
-static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
+static const Monitor *get_monitor_by_number(const Monitors &ms, int monitorNumber) {
+  auto mn = monitorNumber + 1;
+
+  if (mn < 0 || static_cast<size_t>(mn) >= ms.size())
+    return nullptr;
+
+  return &ms[mn];
+}
+
+static Win32::Menu create_monitors_menu(const Monitors &ms, int idbase, bool isConsiderTaskbar) {
   auto menu = Win32::create_popup_menu();
   int id = idbase;
   int index = -1;
 
-  for (auto const &[name, whole, work] : s_monitors) {
+  for (auto const &[name, whole, work] : ms) {
     auto const &rc = isConsiderTaskbar ? work : whole;
     AppendMenu(menu.get(), MF_STRING, id++,
                Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
@@ -228,14 +238,6 @@ static Win32::Menu create_monitors_menu(int idbase, bool isConsiderTaskbar) {
   return menu;
 }
 
-static const Monitor *get_current_monitor(int monitorNumber) {
-  auto mn = monitorNumber + 1;
-
-  if (mn < 0 || static_cast<size_t>(mn) >= s_monitors.size())
-    return NULL;
-
-  return &s_monitors[mn];
-}
 
 //
 // 監視対象ウィンドウの状態
@@ -267,7 +269,7 @@ struct AdjustTargetResult {
   TargetStatus targetStatus;
 };
 
-static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
+static AdjustTargetResult adjust_target(const Monitors &monitors, bool isSettingChanged) {
   static TargetStatus lastTargetStatus;
   auto const &setting = s_currentGlobalSetting;
   auto const &profile = setting.currentProfile;
@@ -295,13 +297,13 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
     auto ncH = wH - cH;
     const UmapitaSetting::PerOrientation &s = cW > cH ? profile.horizontal : profile.vertical;
 
-    auto pMonitor = get_current_monitor(s.monitorNumber);
-    if (!pMonitor) {
+    auto maybeMonitor = get_monitor_by_number(monitors, s.monitorNumber);
+    if (!maybeMonitor) {
       Log::warning(TEXT("invalid monitor number: %d"), s.monitorNumber);
       return {true, lastTargetStatus};
     }
 
-    auto const & mR = s.isConsiderTaskbar ? pMonitor->work : pMonitor->whole;
+    auto const & mR = s.isConsiderTaskbar ? maybeMonitor->work : maybeMonitor->whole;
     auto [mW, mH] = Win32::extent(mR);
 
     // idealCW, idealCH : 理想のクライアント領域サイズ
@@ -687,6 +689,7 @@ void register_handler(CommandHandlerMap &hm, const RadioButtonMap<Enum, Num> &m,
 
 static CommandHandlerMap s_commandHandlerMap;
 CustomGroupBox s_verticalGroupBox, s_horizontalGroupBox;
+Monitors s_monitors;
 static bool s_isDialogChanged = false;
 
 template <typename Enum, std::size_t Num>
@@ -814,7 +817,8 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
                    make_menu_button_handler(ids.selectMonitor.id,
                                             [ids, &setting](Window) {
                                               Log::debug(TEXT("selectMonitor received"));
-                                              return std::make_pair(0, create_monitors_menu(ids.selectMonitor.base,
+                                              return std::make_pair(0, create_monitors_menu(s_monitors,
+                                                                                            ids.selectMonitor.base,
                                                                                             setting.isConsiderTaskbar));
                                             }));
 }
@@ -1201,7 +1205,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     add_tasktray_icon(dialog, s_appIconSm.get());
     dialog.post(WM_TIMER, TIMER_ID, 0);
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
-    update_monitors();
+    s_monitors = get_monitors();
     s_isDialogChanged = true;
     return TRUE;
   }
@@ -1248,7 +1252,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
 
   case WM_TIMER:
-    if (auto r = adjust_target(dialog, s_isDialogChanged); r.isChanged) {
+    if (auto r = adjust_target(s_monitors, s_isDialogChanged); r.isChanged) {
       update_target_status_text(dialog, r.targetStatus);
       update_lock_status(dialog);
       set_profile_text(dialog);
@@ -1271,7 +1275,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     return TRUE;
 
   case WM_DISPLAYCHANGE:
-    update_monitors();
+    s_monitors = get_monitors();
     return TRUE;
 
   case WM_SETFONT:
