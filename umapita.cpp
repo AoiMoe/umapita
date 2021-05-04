@@ -1217,8 +1217,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     dialog.post(WM_TIMER, TIMER_ID, 0);
     dialog.set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
     update_monitors();
-    if (auto r = adjust_target(dialog, true); r.isChanged)
-      update_target_status_text(dialog, r.targetStatus);
+    s_isDialogChanged = true;
     return TRUE;
   }
 
