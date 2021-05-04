@@ -900,36 +900,6 @@ static void update_main_controlls(Window dialog) {
   update_lock_status(dialog);
 }
 
-static std::pair<Win32::Menu, Win32::MenuHandle> create_profile_menu(Window dialog) {
-  auto menu = Win32::load_menu(dialog.get_instance(), MAKEINTRESOURCE(IDM_PROFILE));
-  auto submenu = Win32::get_sub_menu(menu, 0);
-  auto const &s = s_currentGlobalSetting;
-
-  // IDC_LOCK のチェック状態を変更する
-  auto mii = Win32::make_sized_pod<MENUITEMINFO>();
-  mii.fMask = MIIM_STATE;
-  mii.fState = s.currentProfile.isLocked ? MFS_CHECKED : 0;
-  SetMenuItemInfo(submenu.hMenu, IDC_LOCK, false, &mii);
-
-  // 無名プロファイルでは IDC_RENAME と IDC_DELETE を無効にする
-  mii.fMask = MIIM_STATE;
-  mii.fState = s.common.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.hMenu, IDC_RENAME, false, &mii);
-  SetMenuItemInfo(submenu.hMenu, IDC_DELETE, false, &mii);
-
-  // 名前付きかつ無変更ならば IDC_SAVE を無効にする
-  mii.fMask = MIIM_STATE;
-  mii.fState = !s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.hMenu, IDC_SAVE, false, &mii);
-
-  // 無名かつ無変更ならば IDC_NEW を無効にする
-  mii.fMask = MIIM_STATE;
-  mii.fState = s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
-  SetMenuItemInfo(submenu.hMenu, IDC_NEW, false, &mii);
-
-  return std::make_pair(std::move(menu), std::move(submenu));
-}
-
 static int save_as(Window dialog) {
   auto &s = s_currentGlobalSetting;
   auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName);
@@ -990,12 +960,40 @@ static void init_main_controlls(Window dialog) {
   init_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.vertical);
   init_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontal);
 
-  register_handler(s_commandHandlerMap, IDC_OPEN_PROFILE_MENU,
-                   make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
-                                            [](Window dialog) {
-                                              Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
-                                              return create_profile_menu(dialog);
-                                            }));
+  register_handler(
+    s_commandHandlerMap, IDC_OPEN_PROFILE_MENU,
+    make_menu_button_handler(
+      IDC_OPEN_PROFILE_MENU,
+      [](Window dialog) {
+        Log::debug(TEXT("IDC_OPEN_PROFILE_MENU received"));
+        auto menu = Win32::load_menu(dialog.get_instance(), MAKEINTRESOURCE(IDM_PROFILE));
+        auto submenu = Win32::get_sub_menu(menu, 0);
+        auto const &s = s_currentGlobalSetting;
+
+        // IDC_LOCK のチェック状態を変更する
+        auto mii = Win32::make_sized_pod<MENUITEMINFO>();
+        mii.fMask = MIIM_STATE;
+        mii.fState = s.currentProfile.isLocked ? MFS_CHECKED : 0;
+        SetMenuItemInfo(submenu.hMenu, IDC_LOCK, false, &mii);
+
+        // 無名プロファイルでは IDC_RENAME と IDC_DELETE を無効にする
+        mii.fMask = MIIM_STATE;
+        mii.fState = s.common.currentProfileName.empty() ? MFS_DISABLED : MFS_ENABLED;
+        SetMenuItemInfo(submenu.hMenu, IDC_RENAME, false, &mii);
+        SetMenuItemInfo(submenu.hMenu, IDC_DELETE, false, &mii);
+
+        // 名前付きかつ無変更ならば IDC_SAVE を無効にする
+        mii.fMask = MIIM_STATE;
+        mii.fState = !s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+        SetMenuItemInfo(submenu.hMenu, IDC_SAVE, false, &mii);
+
+        // 無名かつ無変更ならば IDC_NEW を無効にする
+        mii.fMask = MIIM_STATE;
+        mii.fState = s.common.currentProfileName.empty() && !s.common.isCurrentProfileChanged ? MFS_DISABLED : MFS_ENABLED;
+        SetMenuItemInfo(submenu.hMenu, IDC_NEW, false, &mii);
+
+        return std::make_pair(std::move(menu), std::move(submenu));
+      }));
   register_handler(s_commandHandlerMap, IDC_LOCK,
                    [](Window) {
                      Log::debug(TEXT("IDC_LOCK received"));
