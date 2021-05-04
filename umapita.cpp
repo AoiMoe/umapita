@@ -42,7 +42,9 @@ inline bool operator == (const TargetStatus &lhs, const TargetStatus &rhs) {
 //
 // 設定値
 //
-struct PerOrientationSetting {
+namespace UmapitaSetting {
+
+struct PerOrientation {
   LONG monitorNumber = 0;
   bool isConsiderTaskbar;
   enum WindowArea { Whole, Client } windowArea;
@@ -53,54 +55,56 @@ struct PerOrientationSetting {
   LONG aspectX, aspectY; // XXX: アスペクト比を固定しないと計算誤差で変な比率になることがある
 };
 
-struct Setting {
+struct PerProfile {
   bool isLocked = false;
   // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
-  PerOrientationSetting verticalSetting{
+  PerOrientation verticalSetting{
     .isConsiderTaskbar = true,
-    .windowArea = PerOrientationSetting::Whole,
+    .windowArea = PerOrientation::Whole,
     .aspectX=9,
     .aspectY=16
   };
-  PerOrientationSetting horizontalSetting{
+  PerOrientation horizontalSetting{
     .isConsiderTaskbar = false,
-    .windowArea = PerOrientationSetting::Client,
+    .windowArea = PerOrientation::Client,
     .aspectX=16,
     .aspectY=9
   };
 };
 
-constexpr Setting DEFAULT_SETTING{};
+constexpr PerProfile DEFAULT_PER_PROFILE{};
 
 template <typename StringType>
-struct GlobalCommonSettingT {
+struct GlobalCommonT {
   bool isEnabled = true;
   bool isCurrentProfileChanged = false;
   StringType currentProfileName{TEXT("")};  // XXX: gcc10 の libstdc++ でも basic_string は constexpr 化されてない
   template <typename T>
-  GlobalCommonSettingT<T> clone() const {
-    return GlobalCommonSettingT<T>{isEnabled, isCurrentProfileChanged, currentProfileName};
+  GlobalCommonT<T> clone() const {
+    return GlobalCommonT<T>{isEnabled, isCurrentProfileChanged, currentProfileName};
   }
 };
-using GlobalCommonSetting = GlobalCommonSettingT<Win32::tstring>;
+using GlobalCommon = GlobalCommonT<Win32::tstring>;
 
-constexpr GlobalCommonSettingT<LPCTSTR> DEFAULT_GLOBAL_COMMON_SETTING{};
+constexpr GlobalCommonT<LPCTSTR> DEFAULT_GLOBAL_COMMON{};
 
 
 template <typename StringType>
-struct GlobalSettingT {
-  GlobalCommonSettingT<StringType> common{DEFAULT_GLOBAL_COMMON_SETTING};
-  Setting currentProfile{DEFAULT_SETTING};
+struct GlobalT {
+  GlobalCommonT<StringType> common{DEFAULT_GLOBAL_COMMON};
+  PerProfile currentProfile{DEFAULT_PER_PROFILE};
   template <typename T>
-  GlobalSettingT<T> clone() const {
-    return GlobalSettingT<T>{common.template clone<T>(), currentProfile};
+  GlobalT<T> clone() const {
+    return GlobalT<T>{common.template clone<T>(), currentProfile};
   }
 };
-using GlobalSetting = GlobalSettingT<Win32::tstring>;
+using Global = GlobalT<Win32::tstring>;
 
-constexpr GlobalSettingT<LPCTSTR> DEFAULT_GLOBAL_SETTING{};
+constexpr GlobalT<LPCTSTR> DEFAULT_GLOBAL{};
 
-GlobalSetting s_currentGlobalSetting{DEFAULT_GLOBAL_SETTING.clone<Win32::tstring>()};
+} // namespace UmapitaSetting
+
+UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
 //
 // ダイアログボックス上のコントロールと設定のマッピング
@@ -127,10 +131,10 @@ struct SelectMonitorMap {
 struct PerOrientationSettingID {
   int monitorNumber;
   CheckButtonMap<bool> isConsiderTaskbar;
-  RadioButtonMap<PerOrientationSetting::WindowArea, 2> windowArea;
+  RadioButtonMap<UmapitaSetting::PerOrientation::WindowArea, 2> windowArea;
   int size;
-  RadioButtonMap<PerOrientationSetting::SizeAxis, 2> axis;
-  RadioButtonMap<PerOrientationSetting::Origin, 9> origin;
+  RadioButtonMap<UmapitaSetting::PerOrientation::SizeAxis, 2> axis;
+  RadioButtonMap<UmapitaSetting::PerOrientation::Origin, 9> origin;
   int offsetX, offsetY;
   SelectMonitorMap selectMonitor;
 };
@@ -141,23 +145,23 @@ constexpr PerOrientationSettingID VERTICAL_SETTING_ID = {
   // isConsiderTaskbar
   make_bool_check_button_map(IDC_V_IS_CONSIDER_TASKBAR),
   // windowArea
-  {{{PerOrientationSetting::Whole, IDC_V_WHOLE_AREA},
-    {PerOrientationSetting::Client, IDC_V_CLIENT_AREA}}},
+  {{{UmapitaSetting::PerOrientation::Whole, IDC_V_WHOLE_AREA},
+    {UmapitaSetting::PerOrientation::Client, IDC_V_CLIENT_AREA}}},
   // size
   IDC_V_SIZE,
   // axis
-  {{{PerOrientationSetting::Width, IDC_V_AXIS_WIDTH},
-    {PerOrientationSetting::Height, IDC_V_AXIS_HEIGHT}}},
+  {{{UmapitaSetting::PerOrientation::Width, IDC_V_AXIS_WIDTH},
+    {UmapitaSetting::PerOrientation::Height, IDC_V_AXIS_HEIGHT}}},
   // origin
-  {{{PerOrientationSetting::N, IDC_V_ORIGIN_N},
-    {PerOrientationSetting::S, IDC_V_ORIGIN_S},
-    {PerOrientationSetting::W, IDC_V_ORIGIN_W},
-    {PerOrientationSetting::E, IDC_V_ORIGIN_E},
-    {PerOrientationSetting::NW, IDC_V_ORIGIN_NW},
-    {PerOrientationSetting::NE, IDC_V_ORIGIN_NE},
-    {PerOrientationSetting::SW, IDC_V_ORIGIN_SW},
-    {PerOrientationSetting::SE, IDC_V_ORIGIN_SE},
-    {PerOrientationSetting::C, IDC_V_ORIGIN_C}}},
+  {{{UmapitaSetting::PerOrientation::N, IDC_V_ORIGIN_N},
+    {UmapitaSetting::PerOrientation::S, IDC_V_ORIGIN_S},
+    {UmapitaSetting::PerOrientation::W, IDC_V_ORIGIN_W},
+    {UmapitaSetting::PerOrientation::E, IDC_V_ORIGIN_E},
+    {UmapitaSetting::PerOrientation::NW, IDC_V_ORIGIN_NW},
+    {UmapitaSetting::PerOrientation::NE, IDC_V_ORIGIN_NE},
+    {UmapitaSetting::PerOrientation::SW, IDC_V_ORIGIN_SW},
+    {UmapitaSetting::PerOrientation::SE, IDC_V_ORIGIN_SE},
+    {UmapitaSetting::PerOrientation::C, IDC_V_ORIGIN_C}}},
   // offsetX
   IDC_V_OFFSET_X,
   // offsetY
@@ -171,23 +175,23 @@ constexpr PerOrientationSettingID HORIZONTAL_SETTING_ID = {
   // isConsiderTaskbar
   make_bool_check_button_map(IDC_H_IS_CONSIDER_TASKBAR),
   // windowArea
-  {{{PerOrientationSetting::Whole, IDC_H_WHOLE_AREA},
-    {PerOrientationSetting::Client, IDC_H_CLIENT_AREA}}},
+  {{{UmapitaSetting::PerOrientation::Whole, IDC_H_WHOLE_AREA},
+    {UmapitaSetting::PerOrientation::Client, IDC_H_CLIENT_AREA}}},
   // size
   IDC_H_SIZE,
   // axis
-  {{{PerOrientationSetting::Width, IDC_H_AXIS_WIDTH},
-    {PerOrientationSetting::Height, IDC_H_AXIS_HEIGHT}}},
+  {{{UmapitaSetting::PerOrientation::Width, IDC_H_AXIS_WIDTH},
+    {UmapitaSetting::PerOrientation::Height, IDC_H_AXIS_HEIGHT}}},
   // origin
-  {{{PerOrientationSetting::N, IDC_H_ORIGIN_N},
-    {PerOrientationSetting::S, IDC_H_ORIGIN_S},
-    {PerOrientationSetting::W, IDC_H_ORIGIN_W},
-    {PerOrientationSetting::E, IDC_H_ORIGIN_E},
-    {PerOrientationSetting::NW, IDC_H_ORIGIN_NW},
-    {PerOrientationSetting::NE, IDC_H_ORIGIN_NE},
-    {PerOrientationSetting::SW, IDC_H_ORIGIN_SW},
-    {PerOrientationSetting::SE, IDC_H_ORIGIN_SE},
-    {PerOrientationSetting::C, IDC_H_ORIGIN_C}}},
+  {{{UmapitaSetting::PerOrientation::N, IDC_H_ORIGIN_N},
+    {UmapitaSetting::PerOrientation::S, IDC_H_ORIGIN_S},
+    {UmapitaSetting::PerOrientation::W, IDC_H_ORIGIN_W},
+    {UmapitaSetting::PerOrientation::E, IDC_H_ORIGIN_E},
+    {UmapitaSetting::PerOrientation::NW, IDC_H_ORIGIN_NW},
+    {UmapitaSetting::PerOrientation::NE, IDC_H_ORIGIN_NE},
+    {UmapitaSetting::PerOrientation::SW, IDC_H_ORIGIN_SW},
+    {UmapitaSetting::PerOrientation::SE, IDC_H_ORIGIN_SE},
+    {UmapitaSetting::PerOrientation::C, IDC_H_ORIGIN_C}}},
   // offsetX
   IDC_H_OFFSET_X,
   // offsetY
@@ -301,66 +305,72 @@ namespace UmapitaRegistry {
 namespace Bits_ {
 
 using namespace AM::Win32::RegMapper;
+using UmapitaSetting::PerOrientation;
+using UmapitaSetting::PerProfile;
+using UmapitaSetting::GlobalCommon;
+using UmapitaSetting::DEFAULT_PER_PROFILE;
+using UmapitaSetting::DEFAULT_GLOBAL_COMMON;
+
 constexpr auto ENUM_WINDOW_AREA =
     make_enum_tag_map(
-      make_enum_tag(TEXT("Whole"), PerOrientationSetting::Whole),
-      make_enum_tag(TEXT("Client"), PerOrientationSetting::Client));
+      make_enum_tag(TEXT("Whole"), PerOrientation::Whole),
+      make_enum_tag(TEXT("Client"), PerOrientation::Client));
 
 constexpr auto ENUM_SIZE_AXIS =
     make_enum_tag_map(
-      make_enum_tag(TEXT("Width"), PerOrientationSetting::Width),
-      make_enum_tag(TEXT("Height"), PerOrientationSetting::Height));
+      make_enum_tag(TEXT("Width"), PerOrientation::Width),
+      make_enum_tag(TEXT("Height"), PerOrientation::Height));
 
 constexpr auto ENUM_ORIGIN =
     make_enum_tag_map(
-      make_enum_tag(TEXT("N"), PerOrientationSetting::N),
-      make_enum_tag(TEXT("S"), PerOrientationSetting::S),
-      make_enum_tag(TEXT("W"), PerOrientationSetting::W),
-      make_enum_tag(TEXT("E"), PerOrientationSetting::E),
-      make_enum_tag(TEXT("NW"), PerOrientationSetting::NW),
-      make_enum_tag(TEXT("NE"), PerOrientationSetting::NE),
-      make_enum_tag(TEXT("SW"), PerOrientationSetting::SW),
-      make_enum_tag(TEXT("SE"), PerOrientationSetting::SE));
+      make_enum_tag(TEXT("N"), PerOrientation::N),
+      make_enum_tag(TEXT("S"), PerOrientation::S),
+      make_enum_tag(TEXT("W"), PerOrientation::W),
+      make_enum_tag(TEXT("E"), PerOrientation::E),
+      make_enum_tag(TEXT("NW"), PerOrientation::NW),
+      make_enum_tag(TEXT("NE"), PerOrientation::NE),
+      make_enum_tag(TEXT("SW"), PerOrientation::SW),
+      make_enum_tag(TEXT("SE"), PerOrientation::SE));
 
 constexpr auto PER_PROFILE_SETTING_DEF =
-    make_composite_value_def<Setting>(
-      make_bool(TEXT("isLocked"), &Setting::isLocked, DEFAULT_SETTING.isLocked),
+    make_composite_value_def<PerProfile>(
+      make_bool(TEXT("isLocked"), &PerProfile::isLocked, DEFAULT_PER_PROFILE.isLocked),
       make_recurse(
-        &Setting::verticalSetting,
-        make_s32(TEXT("vMonitorNumber"), &PerOrientationSetting::monitorNumber, DEFAULT_SETTING.verticalSetting.monitorNumber),
-        make_bool(TEXT("vIsConsiderTaskbar"), &PerOrientationSetting::isConsiderTaskbar, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar),
-        make_enum(TEXT("vWindowArea"), &PerOrientationSetting::windowArea, DEFAULT_SETTING.verticalSetting.windowArea, ENUM_WINDOW_AREA),
-        make_s32(TEXT("vSize"), &PerOrientationSetting::size, DEFAULT_SETTING.verticalSetting.size),
-        make_enum(TEXT("vSizeAxis"), &PerOrientationSetting::axis, DEFAULT_SETTING.verticalSetting.axis, ENUM_SIZE_AXIS),
-        make_enum(TEXT("vOrigin"), &PerOrientationSetting::origin, DEFAULT_SETTING.verticalSetting.origin, ENUM_ORIGIN),
-        make_s32(TEXT("vOffsetX"), &PerOrientationSetting::offsetX, DEFAULT_SETTING.verticalSetting.offsetX),
-        make_s32(TEXT("vOffsetY"), &PerOrientationSetting::offsetY, DEFAULT_SETTING.verticalSetting.offsetY),
-        make_s32(TEXT("vAspectX"), &PerOrientationSetting::aspectX, DEFAULT_SETTING.verticalSetting.aspectX),
-        make_s32(TEXT("vAspectY"), &PerOrientationSetting::aspectY, DEFAULT_SETTING.verticalSetting.aspectY)),
+        &PerProfile::verticalSetting,
+        make_s32(TEXT("vMonitorNumber"), &PerOrientation::monitorNumber, DEFAULT_PER_PROFILE.verticalSetting.monitorNumber),
+        make_bool(TEXT("vIsConsiderTaskbar"), &PerOrientation::isConsiderTaskbar, DEFAULT_PER_PROFILE.verticalSetting.isConsiderTaskbar),
+        make_enum(TEXT("vWindowArea"), &PerOrientation::windowArea, DEFAULT_PER_PROFILE.verticalSetting.windowArea, ENUM_WINDOW_AREA),
+        make_s32(TEXT("vSize"), &PerOrientation::size, DEFAULT_PER_PROFILE.verticalSetting.size),
+        make_enum(TEXT("vSizeAxis"), &PerOrientation::axis, DEFAULT_PER_PROFILE.verticalSetting.axis, ENUM_SIZE_AXIS),
+        make_enum(TEXT("vOrigin"), &PerOrientation::origin, DEFAULT_PER_PROFILE.verticalSetting.origin, ENUM_ORIGIN),
+        make_s32(TEXT("vOffsetX"), &PerOrientation::offsetX, DEFAULT_PER_PROFILE.verticalSetting.offsetX),
+        make_s32(TEXT("vOffsetY"), &PerOrientation::offsetY, DEFAULT_PER_PROFILE.verticalSetting.offsetY),
+        make_s32(TEXT("vAspectX"), &PerOrientation::aspectX, DEFAULT_PER_PROFILE.verticalSetting.aspectX),
+        make_s32(TEXT("vAspectY"), &PerOrientation::aspectY, DEFAULT_PER_PROFILE.verticalSetting.aspectY)),
       make_recurse(
-        &Setting::horizontalSetting,
-        make_s32(TEXT("hMonitorNumber"), &PerOrientationSetting::monitorNumber, DEFAULT_SETTING.verticalSetting.monitorNumber),
-        make_bool(TEXT("hIsConsiderTaskbar"), &PerOrientationSetting::isConsiderTaskbar, DEFAULT_SETTING.verticalSetting.isConsiderTaskbar),
-        make_enum(TEXT("hWindowArea"), &PerOrientationSetting::windowArea, DEFAULT_SETTING.verticalSetting.windowArea, ENUM_WINDOW_AREA),
-        make_s32(TEXT("hSize"), &PerOrientationSetting::size, DEFAULT_SETTING.verticalSetting.size),
-        make_enum(TEXT("hSizeAxis"), &PerOrientationSetting::axis, DEFAULT_SETTING.verticalSetting.axis, ENUM_SIZE_AXIS),
-        make_enum(TEXT("hOrigin"), &PerOrientationSetting::origin, DEFAULT_SETTING.verticalSetting.origin, ENUM_ORIGIN),
-        make_s32(TEXT("hOffsetX"), &PerOrientationSetting::offsetX, DEFAULT_SETTING.verticalSetting.offsetX),
-        make_s32(TEXT("hOffsetY"), &PerOrientationSetting::offsetY, DEFAULT_SETTING.verticalSetting.offsetY),
-        make_s32(TEXT("hAspectX"), &PerOrientationSetting::aspectX, DEFAULT_SETTING.verticalSetting.aspectX),
-        make_s32(TEXT("hAspectY"), &PerOrientationSetting::aspectY, DEFAULT_SETTING.verticalSetting.aspectY)));
+        &PerProfile::horizontalSetting,
+        make_s32(TEXT("hMonitorNumber"), &PerOrientation::monitorNumber, DEFAULT_PER_PROFILE.verticalSetting.monitorNumber),
+        make_bool(TEXT("hIsConsiderTaskbar"), &PerOrientation::isConsiderTaskbar, DEFAULT_PER_PROFILE.verticalSetting.isConsiderTaskbar),
+        make_enum(TEXT("hWindowArea"), &PerOrientation::windowArea, DEFAULT_PER_PROFILE.verticalSetting.windowArea, ENUM_WINDOW_AREA),
+        make_s32(TEXT("hSize"), &PerOrientation::size, DEFAULT_PER_PROFILE.verticalSetting.size),
+        make_enum(TEXT("hSizeAxis"), &PerOrientation::axis, DEFAULT_PER_PROFILE.verticalSetting.axis, ENUM_SIZE_AXIS),
+        make_enum(TEXT("hOrigin"), &PerOrientation::origin, DEFAULT_PER_PROFILE.verticalSetting.origin, ENUM_ORIGIN),
+        make_s32(TEXT("hOffsetX"), &PerOrientation::offsetX, DEFAULT_PER_PROFILE.verticalSetting.offsetX),
+        make_s32(TEXT("hOffsetY"), &PerOrientation::offsetY, DEFAULT_PER_PROFILE.verticalSetting.offsetY),
+        make_s32(TEXT("hAspectX"), &PerOrientation::aspectX, DEFAULT_PER_PROFILE.verticalSetting.aspectX),
+        make_s32(TEXT("hAspectY"), &PerOrientation::aspectY, DEFAULT_PER_PROFILE.verticalSetting.aspectY)));
 
 constexpr auto GLOBAL_SETTING_DEF =
-    make_composite_value_def<GlobalCommonSetting>(
+    make_composite_value_def<GlobalCommon>(
       make_bool(TEXT("isEnabled"),
-                           &GlobalCommonSetting::isEnabled,
-                           DEFAULT_GLOBAL_COMMON_SETTING.isEnabled),
+                           &GlobalCommon::isEnabled,
+                           DEFAULT_GLOBAL_COMMON.isEnabled),
       make_bool(TEXT("isCurrentProfileChanged"),
-                           &GlobalCommonSetting::isCurrentProfileChanged,
-                           DEFAULT_GLOBAL_COMMON_SETTING.isCurrentProfileChanged),
+                           &GlobalCommon::isCurrentProfileChanged,
+                           DEFAULT_GLOBAL_COMMON.isCurrentProfileChanged),
       make_string(TEXT("currentProfileName"),
-                             &GlobalCommonSetting::currentProfileName,
-                             DEFAULT_GLOBAL_COMMON_SETTING.currentProfileName));
+                             &GlobalCommon::currentProfileName,
+                             DEFAULT_GLOBAL_COMMON.currentProfileName));
 
 inline Win32::tstring encode_profile_name(Win32::StrPtr src) {
   Win32::tstring ret;
@@ -417,7 +427,7 @@ Win32::tstring make_regpath(Win32::StrPtr profileName) {
 
 } // namespace UmapitaRegistry::Bits_
 
-Setting load_setting(Win32::StrPtr profileName) {
+UmapitaSetting::PerProfile load_setting(Win32::StrPtr profileName) {
   auto path = Bits_::make_regpath(profileName);
 
   try {
@@ -426,16 +436,16 @@ Setting load_setting(Win32::StrPtr profileName) {
       return Bits_::PER_PROFILE_SETTING_DEF.get(key);
     }
     catch (Win32::RegMapper::GetFailed &) {
-      return DEFAULT_SETTING;
+      return UmapitaSetting::DEFAULT_PER_PROFILE;
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
     Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
-    return DEFAULT_SETTING;
+    return UmapitaSetting::DEFAULT_PER_PROFILE;
   }
 }
 
-void save_setting(Win32::StrPtr profileName, const Setting &s) {
+void save_setting(Win32::StrPtr profileName, const UmapitaSetting::PerProfile &s) {
   auto path = Bits_::make_regpath(profileName);
 
   try {
@@ -451,7 +461,7 @@ void save_setting(Win32::StrPtr profileName, const Setting &s) {
   }
 }
 
-GlobalSetting load_global_setting() {
+UmapitaSetting::Global load_global_setting() {
   auto load_common =
       []() {
         auto path = Bits_::make_regpath(nullptr);
@@ -461,18 +471,18 @@ GlobalSetting load_global_setting() {
             return Bits_::GLOBAL_SETTING_DEF.get(key);
           }
           catch (Win32::RegMapper::GetFailed &) {
-            return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
+            return UmapitaSetting::DEFAULT_GLOBAL_COMMON.clone<Win32::tstring>();
           }
         }
         catch (Win32::Reg::ErrorCode &ex) {
           Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
-          return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
+          return UmapitaSetting::DEFAULT_GLOBAL_COMMON.clone<Win32::tstring>();
         }
       };
-  return GlobalSetting{load_common(), load_setting(nullptr)};
+  return UmapitaSetting::Global{load_common(), load_setting(nullptr)};
 }
 
-void save_global_setting(const GlobalSetting &s) {
+void save_global_setting(const UmapitaSetting::Global &s) {
   auto path = Bits_::make_regpath(nullptr);
 
   try {
@@ -709,7 +719,7 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const PerOrientationSetting &s = cW > cH ? profile.horizontalSetting : profile.verticalSetting;
+    const UmapitaSetting::PerOrientation &s = cW > cH ? profile.horizontalSetting : profile.verticalSetting;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
     if (!pMonitor) {
@@ -725,21 +735,21 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
     // ひとまず s.size をクライアント領域のサイズに換算してクライアント領域の W, H を求める
     LONG idealCW = 0, idealCH = 0;
     switch (s.axis) {
-    case PerOrientationSetting::Width: {
+    case UmapitaSetting::PerOrientation::Width: {
       // 幅方向でサイズ指定
       // - s.size が正ならウィンドウの幅を s.size にする
       // - s.size が 0 ならウィンドウの幅を画面幅に合わせる
       // - s.size が負ならウィンドウの幅を画面の幅から abs(s.size) を引いた値にする
       auto sz = s.size > 0 ? s.size : mW + s.size;
-      idealCW = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncW;
+      idealCW = s.windowArea == UmapitaSetting::PerOrientation::Client ? sz : sz - ncW;
       idealCH = s.aspectY * idealCW / s.aspectX;
       break;
     }
-    case PerOrientationSetting::Height: {
+    case UmapitaSetting::PerOrientation::Height: {
       // 高さ方向でサイズ指定
       // s.size の符号については同上
       auto sz = s.size > 0 ? s.size : mH + s.size;
-      idealCH = s.windowArea == PerOrientationSetting::Client ? sz : sz - ncH;
+      idealCH = s.windowArea == UmapitaSetting::PerOrientation::Client ? sz : sz - ncH;
       idealCW = s.aspectX * idealCH / s.aspectY;
       break;
     }
@@ -748,45 +758,45 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
     // 原点に対してウィンドウを配置する
     // idealX, idealY, idealW, idealH : s.windowArea の設定により、ウィンドウ領域またはクライアント領域の座標値
     LONG idealX = 0, idealY = 0;
-    auto idealW = s.windowArea == PerOrientationSetting::Client ? idealCW : idealCW + ncW;
-    auto idealH = s.windowArea == PerOrientationSetting::Client ? idealCH : idealCH + ncH;
+    auto idealW = s.windowArea == UmapitaSetting::PerOrientation::Client ? idealCW : idealCW + ncW;
+    auto idealH = s.windowArea == UmapitaSetting::PerOrientation::Client ? idealCH : idealCH + ncH;
     switch (s.origin) {
-    case PerOrientationSetting::NW:
-    case PerOrientationSetting::W:
-    case PerOrientationSetting::SW:
+    case UmapitaSetting::PerOrientation::NW:
+    case UmapitaSetting::PerOrientation::W:
+    case UmapitaSetting::PerOrientation::SW:
       idealX = mR.left + s.offsetX;
       break;
-    case PerOrientationSetting::C:
-    case PerOrientationSetting::N:
-    case PerOrientationSetting::S:
+    case UmapitaSetting::PerOrientation::C:
+    case UmapitaSetting::PerOrientation::N:
+    case UmapitaSetting::PerOrientation::S:
       idealX = mR.left + mW/2 - idealW/2  + s.offsetX;
       break;
-    case PerOrientationSetting::NE:
-    case PerOrientationSetting::E:
-    case PerOrientationSetting::SE:
+    case UmapitaSetting::PerOrientation::NE:
+    case UmapitaSetting::PerOrientation::E:
+    case UmapitaSetting::PerOrientation::SE:
       idealX = mR.right - idealW - s.offsetX;
       break;
     }
     switch (s.origin) {
-    case PerOrientationSetting::NW:
-    case PerOrientationSetting::N:
-    case PerOrientationSetting::NE:
+    case UmapitaSetting::PerOrientation::NW:
+    case UmapitaSetting::PerOrientation::N:
+    case UmapitaSetting::PerOrientation::NE:
       idealY = mR.top + s.offsetY;
       break;
-    case PerOrientationSetting::C:
-    case PerOrientationSetting::W:
-    case PerOrientationSetting::E:
+    case UmapitaSetting::PerOrientation::C:
+    case UmapitaSetting::PerOrientation::W:
+    case UmapitaSetting::PerOrientation::E:
       idealY = mR.top + mH/2 - idealH/2 + s.offsetY;
       break;
-    case PerOrientationSetting::SW:
-    case PerOrientationSetting::S:
-    case PerOrientationSetting::SE:
+    case UmapitaSetting::PerOrientation::SW:
+    case UmapitaSetting::PerOrientation::S:
+    case UmapitaSetting::PerOrientation::SE:
       idealY = mR.bottom - idealH - s.offsetY;
       break;
     }
 
     // idealX, idealY, idealW, idealH をウィンドウ全体領域に換算する
-    if (s.windowArea == PerOrientationSetting::Client) {
+    if (s.windowArea == UmapitaSetting::PerOrientation::Client) {
       idealX += ncX;
       idealY += ncY;
       idealW += ncW;
@@ -1103,7 +1113,7 @@ auto make_menu_button_handler(int id, MenuFactory f) {
          };
 }
 
-static void update_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
+static void update_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, UmapitaSetting::PerOrientation &setting) {
   auto get = [dialog](auto id) { return dialog.get_item(id); };
   auto setint = [get](auto id, int v) {
                   get(id).set_text(Win32::asprintf(TEXT("%d"), v));
@@ -1118,7 +1128,7 @@ static void update_per_orientation_settings(Window dialog, const PerOrientationS
   setint(ids.offsetY, setting.offsetY);
 }
 
-static void init_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, PerOrientationSetting &setting) {
+static void init_per_orientation_settings(Window dialog, const PerOrientationSettingID &ids, UmapitaSetting::PerOrientation &setting) {
   register_handler(s_commandHandlerMap, ids.monitorNumber, make_long_integer_box_handler(setting.monitorNumber));
   register_handler(s_commandHandlerMap, ids.isConsiderTaskbar, make_check_button_handler(ids.isConsiderTaskbar, setting.isConsiderTaskbar));
   register_handler(s_commandHandlerMap, ids.windowArea, make_radio_button_map(ids.windowArea, setting.windowArea));
@@ -1415,7 +1425,7 @@ static void init_main_controlls(Window dialog) {
                            return TRUE;
                          }
                        }
-                       s.currentProfile = DEFAULT_SETTING;
+                       s.currentProfile = UmapitaSetting::DEFAULT_PER_PROFILE;
                        s.common.isCurrentProfileChanged = false;
                        break;
                      }
