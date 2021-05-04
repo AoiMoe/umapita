@@ -841,31 +841,6 @@ static void select_profile(Window dialog, int n) {
 }
 
 
-static void init_profile(Window dialog) {
-  auto item = dialog.get_item(IDC_SELECT_PROFILE);
-
-  // エディットボックス部分を編集不可にする
-  // EnableWindow だとなぜかプルダウンメニューが出なくなってしまうのでダメ
-  auto cbi = Win32::make_sized_pod<COMBOBOXINFO>();
-  GetComboBoxInfo(item.get(), &cbi);
-  Edit_SetReadOnly(cbi.hwndItem, true);
-
-  register_handler(s_commandHandlerMap, IDC_SELECT_PROFILE,
-                   [](Window dialog, Window control, int, int notify) {
-                     switch (notify) {
-                     case CBN_SELCHANGE:
-                       dialog.post(WM_CHANGE_PROFILE, 0, control.to<LPARAM>());
-                       return TRUE;
-                     case CBN_SETFOCUS:
-                     case CBN_CLOSEUP:
-                       // テキストがセレクトされるのがうっとうしいのでクリアする
-                       control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
-                       return TRUE;
-                     }
-                     return FALSE;
-                   });
-}
-
 static void update_per_orientation_lock_status(Window dialog, const PerOrientationSettingID &ids, bool isLocked) {
   auto set = [dialog, isLocked](auto id) { dialog.get_item(id).enable(!isLocked); };
   auto set_radio = [dialog, isLocked](const auto &m) {
@@ -954,10 +929,31 @@ static void init_main_controlls(Window dialog) {
     register_handler(s_commandHandlerMap, IDC_ENABLED, make_check_button_handler(m, setting.common.isEnabled, true));
   }
 
-  init_profile(dialog);
+  {
+    // IDC_SELECT_PROFILE のエディットボックス部分を編集不可にする
+    // EnableWindow だとなぜかプルダウンメニューが出なくなってしまうのでダメ
+    auto cbi = Win32::make_sized_pod<COMBOBOXINFO>();
+    GetComboBoxInfo(dialog.get_item(IDC_SELECT_PROFILE).get(), &cbi);
+    Edit_SetReadOnly(cbi.hwndItem, true);
+  }
+
   init_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.vertical);
   init_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontal);
 
+  register_handler(s_commandHandlerMap, IDC_SELECT_PROFILE,
+                   [](Window dialog, Window control, int, int notify) {
+                     switch (notify) {
+                     case CBN_SELCHANGE:
+                       dialog.post(WM_CHANGE_PROFILE, 0, control.to<LPARAM>());
+                       return TRUE;
+                     case CBN_SETFOCUS:
+                     case CBN_CLOSEUP:
+                       // テキストがセレクトされるのがうっとうしいのでクリアする
+                       control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
+                       return TRUE;
+                     }
+                     return FALSE;
+                   });
   register_handler(
     s_commandHandlerMap, IDC_OPEN_PROFILE_MENU,
     make_menu_button_handler(
