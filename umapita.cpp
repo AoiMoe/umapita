@@ -912,7 +912,7 @@ private:
   Window m_owner;
   Kind m_kind;
   Win32::tstring m_profileName;
-  SaveDialogBox(Window owner, Kind kind, LPCTSTR oldname) : m_owner{owner}, m_kind{kind}, m_profileName{oldname} { }
+  SaveDialogBox(Window owner, Kind kind, Win32::StrPtr oldname) : m_owner{owner}, m_kind{kind}, m_profileName{oldname.ptr} { }
   //
   static CALLBACK INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     Window window{hWnd};
@@ -932,7 +932,7 @@ private:
       window.get_item(IDOK).enable(false);
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
-      window.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()).c_str());
+      window.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()));
       center_popup(m_owner, window);
       return TRUE;
     }
@@ -949,7 +949,7 @@ private:
           auto hInst = window.get_instance();
           auto r = open_message_box(window,
                                     Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
-                                    Win32::load_string(hInst, IDS_CONFIRM).c_str(), MB_OKCANCEL);
+                                    Win32::load_string(hInst, IDS_CONFIRM), MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -984,7 +984,7 @@ private:
   }
   SaveDialogBox() { }
 public:
-  static std::pair<int, Win32::tstring> open(Window owner, Kind kind, LPCTSTR oldname) {
+  static std::pair<int, Win32::tstring> open(Window owner, Kind kind, Win32::StrPtr oldname) {
     SaveDialogBox sdb{owner, kind, oldname};
     auto r = DialogBoxParam(owner.get_instance(), MAKEINTRESOURCE(IDD_SAVE), owner.get(), &SaveDialogBox::s_dialog_proc, reinterpret_cast<LPARAM>(&sdb));
     switch (r) {
@@ -1183,7 +1183,7 @@ static void update_profile(Window dialog) {
 
 static int save_as(Window dialog) {
   auto &s = s_currentGlobalSetting;
-  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName.c_str());
+  auto [ret, profileName] = SaveDialogBox::open(dialog, SaveDialogBox::Save, s.common.currentProfileName);
   if (ret == IDCANCEL) {
     Log::debug(TEXT("save as: canceled"));
     return IDCANCEL;
@@ -1218,8 +1218,8 @@ static int confirm_save(Window dialog) {
   dialog.show(SW_SHOW);
   auto hInst = dialog.get_instance();
   auto ret = open_message_box(dialog,
-                              Win32::load_string(hInst, IDS_CONFIRM_SAVE).c_str(),
-                              Win32::load_string(hInst, IDS_CONFIRM).c_str(),
+                              Win32::load_string(hInst, IDS_CONFIRM_SAVE),
+                              Win32::load_string(hInst, IDS_CONFIRM),
                               MB_YESNOCANCEL);
   switch (ret) {
   case IDYES:
@@ -1374,7 +1374,7 @@ static void init_main_controlls(Window dialog) {
   register_handler(s_commandHandlerMap, IDC_RENAME,
                    [](Window dialog) {
                      auto &s = s_currentGlobalSetting;
-                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.common.currentProfileName.c_str());
+                     auto [ret, newProfileName] = SaveDialogBox::open(dialog, SaveDialogBox::Rename, s.common.currentProfileName);
                      if (ret == IDCANCEL) {
                        Log::debug(TEXT("rename: canceled"));
                        return TRUE;
@@ -1396,7 +1396,7 @@ static void init_main_controlls(Window dialog) {
                      auto ret = open_message_box(dialog,
                                                  Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
                                                                  s.common.currentProfileName.c_str()),
-                                                 Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE).c_str(),
+                                                 Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE),
                                                  MB_OKCANCEL);
                      switch (ret) {
                      case IDCANCEL:
@@ -1419,8 +1419,8 @@ static void init_main_controlls(Window dialog) {
                      auto type = s.common.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
                      auto hInst = dialog.get_instance();
                      auto ret = open_message_box(dialog,
-                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT).c_str(),
-                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE).c_str(),
+                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT),
+                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE),
                                                  type);
                      switch (ret) {
                      case IDCANCEL:
