@@ -4,12 +4,13 @@
 #include "am/win32reg_mapper.h"
 #include "am/win32handler.h"
 #include "umapita_def.h"
-#include "umapita_res.h"
+#include "umapita_misc.h"
 #include "umapita_setting.h"
 #include "umapita_registry.h"
 #include "umapita_monitors.h"
 #include "umapita_custom_group_box.h"
 #include "umapita_keyhook.h"
+#include "umapita_res.h"
 
 namespace Win32 = AM::Win32;
 using AM::Log;
@@ -176,14 +177,6 @@ static TargetStatus adjust_target(TargetStatus ts, const UmapitaMonitors &monito
 // 名前を付けて保存する or リネーム
 //
 
-static void fill_string_list_to_combobox(Window cb, const std::vector<Win32::tstring> ss) {
-  ComboBox_ResetContent(cb.get());
-
-  for (auto const &name : ss) {
-    ComboBox_AddString(cb.get(), name.c_str());
-  }
-}
-
 struct UmapitaSaveDialogBox {
   enum Kind { Save, Rename };
 private:
@@ -205,7 +198,7 @@ private:
     switch (msg) {
     case WM_INITDIALOG: {
       auto hInst = window.get_instance();
-      fill_string_list_to_combobox(window.get_item(IDC_SELECT_PROFILE), UmapitaRegistry::enum_profile());
+      Umapita::fill_string_list_to_combobox(window.get_item(IDC_SELECT_PROFILE), UmapitaRegistry::enum_profile());
       window.get_item(IDC_SELECT_PROFILE).set_text(m_profileName);
       window.get_item(IDOK).enable(false);
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
@@ -612,7 +605,7 @@ static void update_profile(Window dialog) {
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
   auto ps = UmapitaRegistry::enum_profile();
 
-  fill_string_list_to_combobox(item, ps);
+  Umapita::fill_string_list_to_combobox(item, ps);
   item.enable(!ps.empty());
   update_profile_text(dialog);
 }
