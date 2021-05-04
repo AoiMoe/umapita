@@ -16,13 +16,13 @@ struct PerOrientation {
 struct PerProfile {
   bool isLocked = false;
   // .xxx=xxx 記法は ISO C++20 からだが、gcc なら使えるのでヨシ！
-  PerOrientation verticalSetting{
+  PerOrientation vertical{
     .isConsiderTaskbar = true,
     .windowArea = PerOrientation::Whole,
     .aspectX=9,
     .aspectY=16
   };
-  PerOrientation horizontalSetting{
+  PerOrientation horizontal{
     .isConsiderTaskbar = false,
     .windowArea = PerOrientation::Client,
     .aspectX=16,

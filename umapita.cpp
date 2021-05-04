@@ -407,7 +407,7 @@ static AdjustTargetResult adjust_target(Window dialog, bool isSettingChanged) {
     auto ncY = ts.windowRect.top - ts.clientRect.top;
     auto ncW = wW - cW;
     auto ncH = wH - cH;
-    const UmapitaSetting::PerOrientation &s = cW > cH ? profile.horizontalSetting : profile.verticalSetting;
+    const UmapitaSetting::PerOrientation &s = cW > cH ? profile.horizontal : profile.vertical;
 
     auto pMonitor = get_current_monitor(s.monitorNumber);
     if (!pMonitor) {
@@ -978,8 +978,8 @@ static void update_main_controlls(Window dialog) {
   auto &setting = s_currentGlobalSetting;
   set_check_button(dialog, make_bool_check_button_map(IDC_ENABLED), setting.common.isEnabled);
   update_profile(dialog);
-  update_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
-  update_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
+  update_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.vertical);
+  update_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontal);
   update_lock_status(dialog);
 }
 
@@ -1021,8 +1021,8 @@ static void init_main_controlls(Window dialog) {
   }
 
   init_profile(dialog);
-  init_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.verticalSetting);
-  init_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontalSetting);
+  init_per_orientation_settings(dialog, VERTICAL_SETTING_ID, setting.currentProfile.vertical);
+  init_per_orientation_settings(dialog, HORIZONTAL_SETTING_ID, setting.currentProfile.horizontal);
 
   register_handler(s_commandHandlerMap, IDC_OPEN_PROFILE_MENU,
                    make_menu_button_handler(IDC_OPEN_PROFILE_MENU,
