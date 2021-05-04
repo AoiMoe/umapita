@@ -251,4 +251,9 @@ Win32::tstring rename_profile(Win32::StrPtr oldName, Win32::StrPtr newName) {
   }
 }
 
+bool is_profile_existing(Win32::StrPtr name) {
+  auto ps = enum_profile();
+  return std::find(ps.begin(), ps.end(), name.ptr) != ps.end();
+}
+
 } // namespace UmapitaRegistry

@@ -9,5 +9,6 @@ void save_global_setting(const UmapitaSetting::Global &s);
 std::vector<AM::Win32::tstring> enum_profile();
 void delete_profile(AM::Win32::StrPtr name);
 AM::Win32::tstring rename_profile(AM::Win32::StrPtr oldName, AM::Win32::StrPtr newName);
+bool is_profile_existing(AM::Win32::StrPtr name);
 
 } // namespace UmapitaRegistry

@@ -624,7 +624,7 @@ private:
         auto n = Win32::remove_ws_on_both_ends(window.get_item(IDC_SELECT_PROFILE).get_text());
         if (n.empty())
           return TRUE;
-        if (auto ps = UmapitaRegistry::enum_profile(); std::find(ps.begin(), ps.end(), n) != ps.end()) {
+        if (UmapitaRegistry::is_profile_existing(n)) {
           auto hInst = window.get_instance();
           auto r = open_message_box(window,
                                     Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
