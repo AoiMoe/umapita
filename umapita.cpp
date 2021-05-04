@@ -334,58 +334,6 @@ static TargetStatus adjust_target(TargetStatus ts, const Monitors &monitors, con
 }
 
 //
-// オーナーウィンドウの真ん中にポップアップウィンドウを配置する
-//
-void center_popup(Window popup, Window owner) {
-  auto rcOwner = owner.get_window_rect();
-  auto rcPopup = popup.get_window_rect();
-  auto w = Win32::width(rcPopup);
-  auto h = Win32::height(rcPopup);
-  auto x = rcOwner.left + (Win32::width(rcOwner) - w)/2;
-  auto y = rcOwner.top + (Win32::height(rcOwner) - h)/2;
-
-  // 画面外にはみ出さないようにする
-  auto hm = owner.get_monitor(MONITOR_DEFAULTTONULL);
-  if (hm) {
-    auto mi = Win32::make_sized_pod<MONITORINFOEX>();
-    GetMonitorInfo(hm, &mi);
-    x = std::max(x, mi.rcWork.left);
-    y = std::max(y, mi.rcWork.top);
-    auto r = std::min(x + w, mi.rcWork.right);
-    auto b = std::min(y + h, mi.rcWork.bottom);
-    x = r - w;
-    y = b - h;
-  }
-
-  popup.set_pos(Window{}, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-}
-
-//
-// メッセージボックスをオーナーの中央に開く
-//
-int open_message_box_in_center(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UINT type) {
-  static TLSSpec Window s_owner;
-  static TLSSpec HHOOK s_hHook = nullptr;
-
-  s_owner = owner;
-  s_hHook = SetWindowsHookEx(WH_CBT,
-                             [](int code, WPARAM wParam, LPARAM lParam) CALLBACK {
-                               HHOOK hHook = s_hHook;
-                               if (code == HCBT_ACTIVATE) {
-                                 UnhookWindowsHookEx(hHook);
-                                 s_hHook = nullptr;
-                                 center_popup(Window::from(wParam), s_owner);
-                               }
-                               return CallNextHookEx(hHook, code, wParam, lParam);
-                             },
-                             owner.get_instance(), GetCurrentThreadId());
-  auto ret = owner.message_box(text.ptr, caption.ptr, type);
-  s_owner.reset();
-  s_hHook = nullptr;
-  return ret;
-}
-
-//
 // 名前を付けて保存する or リネーム
 //
 
@@ -424,7 +372,7 @@ private:
       window.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       window.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()));
-      center_popup(window, m_owner);
+      Win32::center_popup(window, m_owner);
       return TRUE;
     }
 
@@ -438,9 +386,10 @@ private:
           return TRUE;
         if (UmapitaRegistry::is_profile_existing(n)) {
           auto hInst = window.get_instance();
-          auto r = open_message_box_in_center(window,
-                                              Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
-                                              Win32::load_string(hInst, IDS_CONFIRM), MB_OKCANCEL);
+          auto r = Win32::open_message_box_in_center(window,
+                                                     Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
+                                                     Win32::load_string(hInst, IDS_CONFIRM),
+                                                     MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -907,10 +856,10 @@ static int confirm_save(Window dialog) {
   }
   dialog.show(SW_SHOW);
   auto hInst = dialog.get_instance();
-  auto ret = open_message_box_in_center(dialog,
-                                        Win32::load_string(hInst, IDS_CONFIRM_SAVE),
-                                        Win32::load_string(hInst, IDS_CONFIRM),
-                                        MB_YESNOCANCEL);
+  auto ret = Win32::open_message_box_in_center(dialog,
+                                               Win32::load_string(hInst, IDS_CONFIRM_SAVE),
+                                               Win32::load_string(hInst, IDS_CONFIRM),
+                                               MB_YESNOCANCEL);
   switch (ret) {
   case IDYES:
     return save(dialog);
@@ -1028,11 +977,11 @@ static void init_main_controlls(Window dialog) {
                      if (s.common.currentProfileName.empty())
                        return TRUE;
                      auto hInst = dialog.get_instance();
-                     auto ret = open_message_box_in_center(dialog,
-                                                           Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
-                                                                           s.common.currentProfileName.c_str()),
-                                                           Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE),
-                                                           MB_OKCANCEL);
+                     auto ret = Win32::open_message_box_in_center(dialog,
+                                                                  Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
+                                                                                  s.common.currentProfileName.c_str()),
+                                                                  Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE),
+                                                                  MB_OKCANCEL);
                      switch (ret) {
                      case IDCANCEL:
                        return TRUE;
@@ -1053,10 +1002,10 @@ static void init_main_controlls(Window dialog) {
                      }
                      auto type = s.common.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
                      auto hInst = dialog.get_instance();
-                     auto ret = open_message_box_in_center(dialog,
-                                                           Win32::load_string(hInst, IDS_CONFIRM_INIT),
-                                                           Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE),
-                                                           type);
+                     auto ret = Win32::open_message_box_in_center(dialog,
+                                                                  Win32::load_string(hInst, IDS_CONFIRM_INIT),
+                                                                  Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE),
+                                                                  type);
                      switch (ret) {
                      case IDCANCEL:
                        return TRUE;

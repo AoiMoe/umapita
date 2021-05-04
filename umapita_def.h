@@ -1,8 +1,5 @@
 #pragma once
 
-// XXX: __declspec(thread)
-#define TLSSpec __thread
-
 constexpr UINT WM_TASKTRAY = WM_USER+0x1000;
 constexpr UINT WM_CHANGE_PROFILE = WM_USER+0x1001;
 constexpr UINT WM_KEYHOOK = WM_USER+0x1002;
