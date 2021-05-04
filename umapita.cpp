@@ -223,21 +223,6 @@ static const Monitor *get_monitor_by_number(const Monitors &ms, int monitorNumbe
   return &ms[mn];
 }
 
-static Win32::Menu create_monitors_menu(const Monitors &ms, int idbase, bool isConsiderTaskbar) {
-  auto menu = Win32::create_popup_menu();
-  int id = idbase;
-  int index = -1;
-
-  for (auto const &[name, whole, work] : ms) {
-    auto const &rc = isConsiderTaskbar ? work : whole;
-    AppendMenu(menu.get(), MF_STRING, id++,
-               Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
-                               index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str()).c_str());
-  }
-
-  return menu;
-}
-
 
 //
 // 監視対象ウィンドウの状態
@@ -817,9 +802,16 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
                    make_menu_button_handler(ids.selectMonitor.id,
                                             [ids, &setting](Window) {
                                               Log::debug(TEXT("selectMonitor received"));
-                                              return std::make_pair(0, create_monitors_menu(s_monitors,
-                                                                                            ids.selectMonitor.base,
-                                                                                            setting.isConsiderTaskbar));
+                                              auto menu = Win32::create_popup_menu();
+                                              int id = ids.selectMonitor.base;
+                                              int index = -1;
+                                              for (auto const &[name, whole, work] : s_monitors) {
+                                                auto const &rc = setting.isConsiderTaskbar ? work : whole;
+                                                AppendMenu(menu.get(), MF_STRING, id++,
+                                                           Win32::asprintf(TEXT("%2d: (%6ld,%6ld)-(%6ld,%6ld) %ls"),
+                                                                           index++, rc.left, rc.top, rc.right, rc.bottom, name.c_str()).c_str());
+                                              }
+                                              return std::make_pair(0 /*dummy*/, std::move(menu));
                                             }));
 }
 
