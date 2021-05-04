@@ -363,7 +363,7 @@ void center_popup(Window owner, Window popup) {
 //
 // メッセージボックスをオーナーの中央に開く
 //
-int open_message_box(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UINT type) {
+int open_message_box_in_center(Window owner, Win32::StrPtr text, Win32::StrPtr caption, UINT type) {
   static TLSSpec Window s_owner;
   static TLSSpec HHOOK s_hHook = nullptr;
 
@@ -438,9 +438,9 @@ private:
           return TRUE;
         if (UmapitaRegistry::is_profile_existing(n)) {
           auto hInst = window.get_instance();
-          auto r = open_message_box(window,
-                                    Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
-                                    Win32::load_string(hInst, IDS_CONFIRM), MB_OKCANCEL);
+          auto r = open_message_box_in_center(window,
+                                              Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_OVERWRITE), n.c_str()),
+                                              Win32::load_string(hInst, IDS_CONFIRM), MB_OKCANCEL);
           if (r != IDOK)
             return TRUE;
         }
@@ -907,10 +907,10 @@ static int confirm_save(Window dialog) {
   }
   dialog.show(SW_SHOW);
   auto hInst = dialog.get_instance();
-  auto ret = open_message_box(dialog,
-                              Win32::load_string(hInst, IDS_CONFIRM_SAVE),
-                              Win32::load_string(hInst, IDS_CONFIRM),
-                              MB_YESNOCANCEL);
+  auto ret = open_message_box_in_center(dialog,
+                                        Win32::load_string(hInst, IDS_CONFIRM_SAVE),
+                                        Win32::load_string(hInst, IDS_CONFIRM),
+                                        MB_YESNOCANCEL);
   switch (ret) {
   case IDYES:
     return save(dialog);
@@ -1028,11 +1028,11 @@ static void init_main_controlls(Window dialog) {
                      if (s.common.currentProfileName.empty())
                        return TRUE;
                      auto hInst = dialog.get_instance();
-                     auto ret = open_message_box(dialog,
-                                                 Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
-                                                                 s.common.currentProfileName.c_str()),
-                                                 Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE),
-                                                 MB_OKCANCEL);
+                     auto ret = open_message_box_in_center(dialog,
+                                                           Win32::asprintf(Win32::load_string(hInst, IDS_CONFIRM_DELETE),
+                                                                           s.common.currentProfileName.c_str()),
+                                                           Win32::load_string(hInst, IDS_CONFIRM_DELETE_TITLE),
+                                                           MB_OKCANCEL);
                      switch (ret) {
                      case IDCANCEL:
                        return TRUE;
@@ -1053,10 +1053,10 @@ static void init_main_controlls(Window dialog) {
                      }
                      auto type = s.common.currentProfileName.empty() ? MB_YESNO : MB_YESNOCANCEL;
                      auto hInst = dialog.get_instance();
-                     auto ret = open_message_box(dialog,
-                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT),
-                                                 Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE),
-                                                 type);
+                     auto ret = open_message_box_in_center(dialog,
+                                                           Win32::load_string(hInst, IDS_CONFIRM_INIT),
+                                                           Win32::load_string(hInst, IDS_CONFIRM_INIT_TITLE),
+                                                           type);
                      switch (ret) {
                      case IDCANCEL:
                        return TRUE;
