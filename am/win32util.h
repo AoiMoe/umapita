@@ -68,7 +68,7 @@ inline tstring load_string(HINSTANCE hInstance, UINT id) {
 
 template <typename ...Args>
 inline tstring asprintf(StrPtr fmt, Args ...args) {
-  return get_sz(_sctprintf(fmt.ptr, args...), [&](LPTSTR buf) { _stprintf(buf, fmt.ptr, args...); });
+  return get_sz(_sntprintf(nullptr, 0, fmt.ptr, args...), [&](LPTSTR buf) { _stprintf(buf, fmt.ptr, args...); });
 }
 
 

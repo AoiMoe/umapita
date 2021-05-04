@@ -445,7 +445,7 @@ static Setting load_setting(LPCTSTR profileName) {
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+    Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
     return DEFAULT_SETTING;
   }
 }
@@ -462,7 +462,7 @@ static void save_setting(LPCTSTR profileName, const Setting &s) {
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+    Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
   }
 }
 
@@ -480,7 +480,7 @@ static GlobalSetting load_global_setting() {
           }
         }
         catch (Win32::Reg::ErrorCode &ex) {
-          Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+          Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
           return DEFAULT_GLOBAL_COMMON_SETTING.clone<Win32::tstring>();
         }
       };
@@ -499,7 +499,7 @@ static void save_global_setting(const GlobalSetting &s) {
     }
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot read registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+    Log::debug(TEXT("cannot read registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
   }
   save_setting(nullptr, s.currentProfile);
 }
@@ -515,7 +515,7 @@ static std::vector<Win32::tstring> enum_profile() {
     Win32::Reg::enum_key(key, [&ret](Win32::tstring name) { ret.emplace_back(decode_profile_name(name.c_str())); });
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot enum registry \"%S\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
+    Log::debug(TEXT("cannot enum registry \"%ls\": %hs(reason=%d)"), path.c_str(), ex.what(), ex.code);
   }
 
   return ret;
@@ -530,7 +530,7 @@ static Win32::tstring rename_profile(LPCTSTR oldName, LPCTSTR newName) {
     return newName;
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot rename \"%S\" to \"%S\": %hs(reason=%d)"), oldName, newName, ex.what(), ex.code);
+    Log::debug(TEXT("cannot rename \"%ls\" to \"%ls\": %hs(reason=%d)"), oldName, newName, ex.what(), ex.code);
     return TEXT("");
   }
 }
@@ -542,7 +542,7 @@ static void delete_profile(LPCTSTR name) {
     Win32::Reg::delete_tree(key, encode_profile_name(name).c_str());
   }
   catch (Win32::Reg::ErrorCode &ex) {
-    Log::debug(TEXT("cannot delete \"%S\": %hs(reason=%d, path=\"%S\")"), name, ex.what(), ex.code, path.c_str());
+    Log::debug(TEXT("cannot delete \"%ls\": %hs(reason=%d, path=\"%ls\")"), name, ex.what(), ex.code, path.c_str());
   }
 }
 
@@ -602,7 +602,7 @@ static void update_monitors() {
                         auto &mis = *reinterpret_cast<std::vector<MONITORINFOEX> *>(lParam);
                         auto mi = Win32::make_sized_pod<MONITORINFOEX>();
                         GetMonitorInfo(hMonitor, &mi);
-                        Log::debug(TEXT("hMonitor=%p, szDevice=%S, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
+                        Log::debug(TEXT("hMonitor=%p, szDevice=%ls, rcMonitor=(%ld,%ld)-(%ld,%ld), rcWork=(%ld,%ld)-(%ld,%ld), dwFlags=%X"),
                                    hMonitor, mi.szDevice,
                                    mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
                                    mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom,
@@ -1606,7 +1606,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     set_profile_text(dialog); // ユーザの選択で変更定されたエディットボックスの内容を一旦戻す（後に再設定される）
     switch (confirm_save(dialog)) {
     case IDOK: {
-      Log::debug(TEXT("selected: %S"), n.c_str());
+      Log::debug(TEXT("selected: %ls"), n.c_str());
       s_currentGlobalSetting.common.currentProfileName = n;
       s_currentGlobalSetting.currentProfile = load_setting(n.c_str());
       s_currentGlobalSetting.common.isCurrentProfileChanged = false;

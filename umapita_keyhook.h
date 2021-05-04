@@ -37,7 +37,7 @@ class KeyHook {
         }
       }
       if (!m_keyhookEntry) {
-        AM::Log::info(TEXT("cannot load \"%S\""), Bits_::KEYHOOK_DLL_NAME);
+        AM::Log::info(TEXT("cannot load \"%ls\""), Bits_::KEYHOOK_DLL_NAME);
       }
     }
   }
@@ -45,7 +45,7 @@ class KeyHook {
     m_keyhookEntry = nullptr;
     if (m_hModKeyHook) {
       FreeLibrary(m_hModKeyHook);
-      AM::Log::info(TEXT("unload \"%S\""), Bits_::KEYHOOK_DLL_NAME);
+      AM::Log::info(TEXT("unload \"%ls\""), Bits_::KEYHOOK_DLL_NAME);
     }
     m_hModKeyHook = nullptr;
   }

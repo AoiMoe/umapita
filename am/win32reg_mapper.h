@@ -28,10 +28,10 @@ struct SingleValueDef {
     }
     catch (Win32::Reg::ErrorCode &ex) {
       if (ex.code == ERROR_FILE_NOT_FOUND) {
-        Log::warning(TEXT("SingleValueDef::get: \"%S\" is not found - use default value"), name);
+        Log::warning(TEXT("SingleValueDef::get: \"%ls\" is not found - use default value"), name);
         return ValueType{defaultValue};
       }
-      Log::error(TEXT("SingleValueDef::get: cannot get \"%S\" value: %hs(%d)"), name, ex.what(), ex.code);
+      Log::error(TEXT("SingleValueDef::get: cannot get \"%ls\" value: %hs(%d)"), name, ex.what(), ex.code);
       throw GetFailed{};
     }
   }
@@ -40,7 +40,7 @@ struct SingleValueDef {
       return typeMap.put(key, name, v);
     }
     catch (Win32::Reg::ErrorCode &ex) {
-      Log::error(TEXT("SingleValueDef::put: cannot put \"%S\" value: %hs(%d)"), name, ex.what(), ex.code);
+      Log::error(TEXT("SingleValueDef::put: cannot put \"%ls\" value: %hs(%d)"), name, ex.what(), ex.code);
       throw PutFailed{};
     }
   }
@@ -116,12 +116,12 @@ struct EnumMap {
   EnumTagMap<Enum, Num> tagMap;
   Enum get(const Win32::Reg::Key &key, LPCTSTR fname) const {
     auto str = Win32::Reg::query_sz(key, fname);
-    Log::debug(TEXT("EnumMap::get: %S -> %S"), fname, str.c_str());
+    Log::debug(TEXT("EnumMap::get: %ls -> %ls"), fname, str.c_str());
     for (auto [t, v] : tagMap) {
       if (str == t)
         return v;
     }
-    Log::error(TEXT("unknown enum tag in \"%S\": %S"), fname, str.c_str());
+    Log::error(TEXT("unknown enum tag in \"%ls\": %ls"), fname, str.c_str());
     throw GetFailed{};
   }
   void put(const Win32::Reg::Key &key, LPCTSTR fname, Enum v) const {
@@ -132,7 +132,7 @@ struct EnumMap {
                     }
                     throw PutFailed{};
                   }();
-    Log::debug(TEXT("EnumMap::put: %S -> %S"), fname, tag);
+    Log::debug(TEXT("EnumMap::put: %ls -> %ls"), fname, tag);
     Win32::Reg::set_sz(key, fname, tag);
   }
 };
@@ -160,11 +160,11 @@ struct BoolMap {
   using DefaultValueType = bool;
   bool get(const Win32::Reg::Key &key, LPCTSTR fname) const {
     bool v = !!Win32::Reg::query_dword(key, fname);
-    Log::debug(TEXT("BoolMap::get: %S -> %hs"), fname, v ? "true":"false");
+    Log::debug(TEXT("BoolMap::get: %ls -> %hs"), fname, v ? "true":"false");
     return v;
   }
   void put(const Win32::Reg::Key &key, LPCTSTR fname, bool v) const {
-    Log::debug(TEXT("BoolMap::put: %S -> %hs"), fname, v ? "true":"false");
+    Log::debug(TEXT("BoolMap::put: %ls -> %hs"), fname, v ? "true":"false");
     Win32::Reg::set_dword(key, fname, static_cast<DWORD>(v ? 1 : 0));
   }
 };
@@ -190,11 +190,11 @@ struct S32Map {
   using DefaultValueType = INT32;
   INT32 get(const Win32::Reg::Key &key, LPCTSTR fname) const {
     INT32 v = static_cast<INT32>(Win32::Reg::query_dword(key, fname));
-    Log::debug(TEXT("LongMap::get: %S -> %d"), fname, static_cast<int>(v));
+    Log::debug(TEXT("LongMap::get: %ls -> %d"), fname, static_cast<int>(v));
     return v;
   }
   void put(const Win32::Reg::Key &key, LPCTSTR fname, INT32 v) const {
-    Log::debug(TEXT("LongMap::put: %S -> %d"), fname, static_cast<int>(v));
+    Log::debug(TEXT("LongMap::put: %ls -> %d"), fname, static_cast<int>(v));
     Win32::Reg::set_dword(key, fname, static_cast<DWORD>(v));
   }
 };
@@ -220,11 +220,11 @@ struct StringMap {
   using DefaultValueType = LPCTSTR;
   Win32::tstring get(const Win32::Reg::Key &key, LPCTSTR fname) const {
     auto str = Win32::Reg::query_sz(key, fname);
-    Log::debug(TEXT("StringMap::get: %S -> %S"), fname, str.c_str());
+    Log::debug(TEXT("StringMap::get: %ls -> %ls"), fname, str.c_str());
     return str;
   }
   void put(const Win32::Reg::Key &key, LPCTSTR fname, const Win32::tstring &v) const {
-    Log::debug(TEXT("StringMap::put: %S -> %S"), fname, v.c_str());
+    Log::debug(TEXT("StringMap::put: %ls -> %ls"), fname, v.c_str());
     Win32::Reg::set_sz(key, fname, v.c_str());
   }
 };
