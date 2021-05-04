@@ -800,7 +800,7 @@ static void init_per_orientation_settings(Window dialog, const PerOrientationSet
                                             }));
 }
 
-static void set_profile_text(Window dialog) {
+static void update_profile_text(Window dialog) {
   Win32::tstring buf;
   auto item = dialog.get_item(IDC_SELECT_PROFILE);
   auto hInst = dialog.get_instance();
@@ -823,7 +823,7 @@ static void update_profile(Window dialog) {
   auto isEnabled = fill_profile_to_combobox(item);
 
   item.enable(isEnabled);
-  set_profile_text(dialog);
+  update_profile_text(dialog);
 }
 
 static void select_profile(Window dialog, int n) {
@@ -836,7 +836,7 @@ static void select_profile(Window dialog, int n) {
   auto str = Win32::get_sz(len, [item, n](LPTSTR buf, std::size_t len) { ComboBox_GetLBText(item.get(), n, buf); });
   item.set_text(str);
   dialog.post(WM_CHANGE_PROFILE, 0, item.to<LPARAM>());
-  //テキストがセレクトされるのがうっとうしいのでクリアする
+  // テキストがセレクトされるのがうっとうしいのでクリアする
   item.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
 }
 
@@ -858,7 +858,7 @@ static void init_profile(Window dialog) {
                        return TRUE;
                      case CBN_SETFOCUS:
                      case CBN_CLOSEUP:
-                       //テキストがセレクトされるのがうっとうしいのでクリアする
+                       // テキストがセレクトされるのがうっとうしいのでクリアする
                        control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
                        return TRUE;
                      }
@@ -1231,7 +1231,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
   case WM_TIMER:
     if (s_isDialogChanged) {
       update_lock_status(dialog);
-      set_profile_text(dialog);
+      update_profile_text(dialog);
       s_lastTargetStatus = TargetStatus{};
       s_isDialogChanged = false;
     }
@@ -1273,7 +1273,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
   case WM_CHANGE_PROFILE: {
     auto control = Window::from(lParam);
     auto n = control.get_text();
-    set_profile_text(dialog); // ユーザの選択で変更定されたエディットボックスの内容を一旦戻す（後に再設定される）
+    update_profile_text(dialog); // ユーザの選択で変更されたエディットボックスの内容を一旦戻す（この後で再設定される）
     switch (confirm_save(dialog)) {
     case IDOK: {
       Log::debug(TEXT("selected: %ls"), n.c_str());
@@ -1288,7 +1288,7 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     }
     s_isDialogChanged = true;
     update_main_controlls(dialog);
-    //テキストがセレクトされるのがうっとうしいのでクリアする
+    // テキストがセレクトされるのがうっとうしいのでクリアする
     control.post(CB_SETEDITSEL, 0, MAKELPARAM(-1, -1));
     return TRUE;
   }
