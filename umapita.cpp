@@ -15,7 +15,6 @@ using Win32::Window;
 
 UINT s_msgTaskbarCreated = 0;
 Win32::Icon s_appIcon = nullptr, s_appIconSm = nullptr;
-HFONT s_hFontMainDialog = nullptr;
 UmapitaSetting::Global s_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
 
 
@@ -90,6 +89,7 @@ class CustomGroupBox {
   Window m_window;
   WNDPROC m_lpPrevWndFunc = nullptr;
   bool m_isSelected = false;
+  HFONT m_hFont = nullptr;
   //
   static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     Window window{hWnd};
@@ -109,7 +109,7 @@ class CustomGroupBox {
     auto p = window.begin_paint();
 
     // テキスト描画
-    auto scopedSelect = Win32::scoped_select_font(p.hdc(), s_hFontMainDialog);
+    auto scopedSelect = Win32::scoped_select_font(p.hdc(), m_hFont); // m_hFont は nullptr でも問題ない
 
     TEXTMETRIC tm;
     GetTextMetrics(p.hdc(), &tm);
@@ -173,6 +173,10 @@ public:
       m_isSelected = isSelected;
       redraw();
     }
+  }
+  void set_font(HFONT hFont) {
+    m_hFont = hFont;
+    redraw();
   }
 };
 
@@ -1269,10 +1273,13 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     s_monitors = get_monitors();
     return TRUE;
 
-  case WM_SETFONT:
+  case WM_SETFONT: {
     // ダイアログのフォントを明示的に設定していると呼ばれる
-    s_hFontMainDialog = reinterpret_cast<HFONT>(wParam);
+    auto hFont = reinterpret_cast<HFONT>(wParam);
+    s_verticalGroupBox.set_font(hFont);
+    s_horizontalGroupBox.set_font(hFont);
     return TRUE;
+  }
 
   case WM_CHANGE_PROFILE: {
     auto control = Window::from(lParam);
