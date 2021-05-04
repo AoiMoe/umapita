@@ -2,6 +2,9 @@
 
 #include "am/log.h"
 
+// XXX: __declspec(thread)
+#define AM_TLS_SPEC __thread
+
 namespace AM {
 
 //

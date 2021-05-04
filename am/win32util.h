@@ -445,4 +445,61 @@ using ScopedSetTextColorRestorer = ScopedHDCRestorer<SetTextColorRestorer>;
   return Bits_::ScopedSetTextColorRestorer{hdc, v};
 }
 
+//
+// misc
+//
+
+//
+// place popup in the center of the owner window
+//
+inline void center_popup(Window popup, Window owner) {
+  auto rcOwner = owner.get_window_rect();
+  auto rcPopup = popup.get_window_rect();
+  auto w = width(rcPopup);
+  auto h = height(rcPopup);
+  auto x = rcOwner.left + (width(rcOwner) - w)/2;
+  auto y = rcOwner.top + (height(rcOwner) - h)/2;
+
+  // fit the screen monitor
+  auto hm = owner.get_monitor(MONITOR_DEFAULTTONULL);
+  if (hm) {
+    auto mi = make_sized_pod<MONITORINFOEX>();
+    GetMonitorInfo(hm, &mi);
+    x = std::max(x, mi.rcWork.left);
+    y = std::max(y, mi.rcWork.top);
+    auto r = std::min(x + w, mi.rcWork.right);
+    auto b = std::min(y + h, mi.rcWork.bottom);
+    x = r - w;
+    y = b - h;
+  }
+
+  popup.set_pos(Window{}, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+//
+// open message box in the center of the owner window
+//
+inline int open_message_box_in_center(Window owner, StrPtr text, StrPtr caption, UINT type) {
+  static AM_TLS_SPEC Window s_owner;
+  static AM_TLS_SPEC HHOOK s_hHook = nullptr;
+
+  s_owner = owner;
+  s_hHook = SetWindowsHookEx(WH_CBT,
+                             [](int code, WPARAM wParam, LPARAM lParam) CALLBACK {
+                               HHOOK hHook = s_hHook;
+                               if (code == HCBT_ACTIVATE) {
+                                 UnhookWindowsHookEx(hHook);
+                                 s_hHook = nullptr;
+                                 center_popup(Window::from(wParam), s_owner);
+                               }
+                               return CallNextHookEx(hHook, code, wParam, lParam);
+                             },
+                             owner.get_instance(), GetCurrentThreadId());
+  auto ret = owner.message_box(text.ptr, caption.ptr, type);
+  s_owner.reset();
+  s_hHook = nullptr;
+  return ret;
+}
+
+
 } // namespace AM::Win32
