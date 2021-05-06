@@ -31,7 +31,7 @@ VER_2 ?= $(MONTHDAY)
 VER_3 ?= $(REV)
 
 _AMOUTDIR = $(_OUTDIR)/am
-SRCS = $(wildcard am/*.cpp) umapita.cpp umapita_registry.cpp umapita_save_dialog_box.cpp
+SRCS = $(wildcard am/*.cpp) umapita.cpp umapita_registry.cpp umapita_save_dialog_box.cpp umapita_target_status.cpp
 OBJS = $(SRCS:%.cpp=$(_OUTDIR)/%.o)
 DEPS = $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
 RC_SRCS = umapita_res.rc
