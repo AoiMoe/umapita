@@ -30,6 +30,10 @@ struct MessageTraits {
              return h(dialog, control, id, notify);
            };
   }
+  template <typename Fn, std::enable_if_t<std::is_invocable_r_v<MaybeResult, Fn>, bool> = true>
+  static Handler make(Fn h) noexcept {
+    return [h](Window, UINT, WPARAM, LPARAM) { return h(); };
+  };
 };
 using WindowMessageTraits = MessageTraits<LRESULT, 0>;
 using DialogMessageTraits = MessageTraits<INT_PTR, FALSE>;
@@ -45,6 +49,10 @@ struct Map {
   template <typename Fn>
   void register_handler(Key key, Fn handler) {
     m_map.emplace(key, HandlerTraits::make(handler));
+  }
+  template <typename Fn>
+  void register_default_handler(Fn handler) {
+    m_default = HandlerTraits::make(handler);
   }
   template <typename ...Args>
   std::enable_if_t<HandlerTraits::template IS_INVOKER_ARGS<Args...>, Result> invoke(Key id, Args &&...args) const {
