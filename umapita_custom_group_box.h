@@ -59,8 +59,7 @@ class UmapitaCustomGroupBox : public AM::Win32::CustomControl::Template<UmapitaC
   }
 public:
   UmapitaCustomGroupBox() {
-    // XXX: なぜか register_message(WM_PAINT, std::bind(on_paint, this, _1)); では HandlerTraits::make が解決できない
-    register_message(WM_PAINT, [&](AM::Win32::Window w) { return this->on_paint(w); });
+    register_message(WM_PAINT, AM::Win32::Handler::binder(*this, on_paint));
     register_message(WM_GETDLGCODE, []() { return DLGC_STATIC; });
     register_message(WM_NCHITTEST, []() { return HTTRANSPARENT; });
   }
