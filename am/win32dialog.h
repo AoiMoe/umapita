@@ -27,10 +27,11 @@ private:
     } else {
       self = reinterpret_cast<Impl *>(GetWindowLongPtr(hWnd, DWLP_USER));
     }
-    if (!self)
-      return Impl::s_pre_init(window, msg, wParam, lParam);
-    return AM::try_or([&] { return self->m_message_handlers.invoke(msg, window, msg, wParam, lParam); },
-                      FALSE);
+    return AM::try_or([&] {
+                        if (!self)
+                          return Impl::s_pre_init(window, msg, wParam, lParam);
+                        return self->dialog_proc(hWnd, msg, wParam, lParam);
+                      }, FALSE);
   }
   CommandHandlers::MaybeResult wm_command_handler(Window window, UINT msg, WPARAM wParam, LPARAM lParam) {
     return m_command_handlers.invoke(LOWORD(wParam), window, msg, wParam, lParam);
@@ -43,6 +44,9 @@ protected:
     using namespace std::placeholders;
     m_message_handlers.register_handler(WM_COMMAND, std::bind(wm_command_handler, this, _1, _2, _3, _4));
     m_message_handlers.register_handler(WM_SYSCOMMAND, std::bind(wm_system_command_handler, this, _1, _2, _3, _4));
+  }
+  INT_PTR dialog_proc(Window window, UINT msg, WPARAM wParam, LPARAM lParam) {
+    return m_message_handlers.invoke(msg, window, msg, wParam, lParam);
   }
   Window get_owner() const { return m_owner; }
   Window get_window() const { return m_window; }
