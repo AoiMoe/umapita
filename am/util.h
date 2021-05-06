@@ -74,7 +74,7 @@ auto try_orelse(F f, G of) -> std::enable_if_t<std::is_void_v<std::invoke_result
 }
 
 template <typename F, typename G>
-auto try_orelse(F f, G of) -> std::enable_if_t<std::is_void_v<std::invoke_result_t<F>>, std::invoke_result_t<F>> {
+auto try_orelse(F f, G of) -> std::enable_if_t<!std::is_void_v<std::invoke_result_t<F>>, std::invoke_result_t<F>> {
   static_assert(std::is_same_v<std::invoke_result_t<F>, std::invoke_result_t<G>>);
   try {
     return f();
