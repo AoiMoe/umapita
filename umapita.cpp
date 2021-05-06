@@ -3,6 +3,7 @@
 #include "am/win32reg.h"
 #include "am/win32reg_mapper.h"
 #include "am/win32handler.h"
+#include "am/win32custom_control.h"
 #include "umapita_def.h"
 #include "umapita_misc.h"
 #include "umapita_setting.h"

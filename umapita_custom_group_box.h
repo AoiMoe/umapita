@@ -5,27 +5,12 @@
 //
 // WndProc をオーバライドしていくつかの WM を置き換える
 //
-class UmapitaCustomGroupBox {
-  AM::Win32::Window m_window;
-  WNDPROC m_lpPrevWndFunc = nullptr;
+class UmapitaCustomGroupBox : public AM::Win32::CustomControl::Template<UmapitaCustomGroupBox> {
+  using Base = AM::Win32::CustomControl::Template<UmapitaCustomGroupBox>;
   bool m_isSelected = false;
   HFONT m_hFont = nullptr;
   //
-  static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    AM::Win32::Window window{hWnd};
-    auto self = window.get_user_data<UmapitaCustomGroupBox *>();
-    switch (msg) {
-    case WM_PAINT:
-      AM::try_or_void([self, window]() { self->on_paint(window); });
-      return 0;
-    case WM_GETDLGCODE:
-      return DLGC_STATIC;
-    case WM_NCHITTEST:
-      return HTTRANSPARENT;
-    }
-    return CallWindowProc(self->m_lpPrevWndFunc, hWnd, msg, wParam, lParam);
-  }
-  void on_paint(AM::Win32::Window window) {
+  AM::Win32::CustomControl::MessageHandlers::MaybeResult on_paint(AM::Win32::Window window) {
     auto p = window.begin_paint();
 
     // テキスト描画
@@ -61,33 +46,26 @@ class UmapitaCustomGroupBox {
       FrameRgn(p.hdc(), r.get(), hBrush, w, w);
     }
     SelectClipRgn(p.hdc(), nullptr);
+    return 0;
   }
   void redraw() {
-    if (m_window) {
-      auto parent = m_window.get_parent();
-      auto rect = m_window.get_window_rect();
+    if (this->get_window()) {
+      auto parent = this->get_window().get_parent();
+      auto rect = this->get_window().get_window_rect();
       MapWindowPoints(HWND_DESKTOP, parent.get(), reinterpret_cast<LPPOINT>(&rect), 2);
       parent.invalidate_rect(rect, true);
       parent.update_window();
     }
   }
 public:
-  UmapitaCustomGroupBox() { }
-  void override_window_proc(AM::Win32::Window window) {
-    m_window = window;
-    m_lpPrevWndFunc = m_window.get_wndproc();
-    m_window.set_wndproc(WndProc);
-    m_window.set_user_data(this);
-    redraw();
+  UmapitaCustomGroupBox() {
+    // XXX: なぜか register_message(WM_PAINT, std::bind(on_paint, this, _1)); では HandlerTraits::make が解決できない
+    register_message(WM_PAINT, [&](AM::Win32::Window w) { return this->on_paint(w); });
+    register_message(WM_GETDLGCODE, []() { return DLGC_STATIC; });
+    register_message(WM_NCHITTEST, []() { return HTTRANSPARENT; });
   }
-  void restore_window_proc() {
-    if (m_window) {
-      m_window.set_wndproc(m_lpPrevWndFunc);
-      m_window.set_user_data(LONG_PTR{0});
-      m_window.reset();
-      m_lpPrevWndFunc = nullptr;
-    }
-  }
+  using Base::override_window_proc;
+  using Base::restore_window_proc;
   void set_selected(bool isSelected) {
     if ((m_isSelected && !isSelected) || (!m_isSelected && isSelected)) {
       m_isSelected = isSelected;
