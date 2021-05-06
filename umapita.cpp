@@ -4,6 +4,7 @@
 #include "am/win32reg_mapper.h"
 #include "am/win32handler.h"
 #include "am/win32custom_control.h"
+#include "am/win32dialog.h"
 #include "umapita_def.h"
 #include "umapita_misc.h"
 #include "umapita_setting.h"

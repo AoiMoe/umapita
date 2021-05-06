@@ -3,18 +3,14 @@
 //
 // 名前を付けて保存する or リネーム
 //
-struct UmapitaSaveDialogBox {
+struct UmapitaSaveDialogBox : public AM::Win32::Dialog::Template<UmapitaSaveDialogBox> {
+  friend class AM::Win32::Dialog::Template<UmapitaSaveDialogBox>;
   enum Kind { Save, Rename };
 private:
-  AM::Win32::Window m_owner;
   Kind m_kind;
   AM::Win32::tstring m_profileName;
-  UmapitaSaveDialogBox(AM::Win32::Window owner, Kind kind, AM::Win32::StrPtr oldname) : m_owner{owner}, m_kind{kind}, m_profileName{oldname.ptr} { }
-  //
-  static CALLBACK INT_PTR s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-  INT_PTR dialog_proc(AM::Win32::Window window, UINT msg, WPARAM wParam, LPARAM lParam);
-  UmapitaSaveDialogBox(const UmapitaSaveDialogBox &) = delete;
-  UmapitaSaveDialogBox &operator = (const UmapitaSaveDialogBox &) = delete;
+  UmapitaSaveDialogBox(Kind kind, AM::Win32::StrPtr oldname);
+  static LPCTSTR get_dialog_template_name();
 public:
   static std::pair<int, AM::Win32::tstring> open(AM::Win32::Window owner, Kind kind, AM::Win32::StrPtr oldname);
 };
