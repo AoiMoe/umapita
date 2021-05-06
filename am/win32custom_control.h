@@ -33,8 +33,7 @@ protected:
     m_message_handlers.register_handler(msg, handler);
   }
   Template() {
-    using namespace std::placeholders;
-    m_message_handlers.register_default_handler(std::bind(&default_handler, this, _1, _2, _3, _4));
+    m_message_handlers.register_default_handler(Handler::binder(*this, default_handler));
   }
   void override_window_proc(AM::Win32::Window window) {
     m_window = window;

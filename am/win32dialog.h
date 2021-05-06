@@ -41,9 +41,8 @@ private:
   }
 protected:
   Template() {
-    using namespace std::placeholders;
-    m_message_handlers.register_handler(WM_COMMAND, std::bind(wm_command_handler, this, _1, _2, _3, _4));
-    m_message_handlers.register_handler(WM_SYSCOMMAND, std::bind(wm_system_command_handler, this, _1, _2, _3, _4));
+    m_message_handlers.register_handler(WM_COMMAND, Handler::binder(*this, wm_command_handler));
+    m_message_handlers.register_handler(WM_SYSCOMMAND, Handler::binder(*this, wm_system_command_handler));
   }
   INT_PTR dialog_proc(Window window, UINT msg, WPARAM wParam, LPARAM lParam) {
     return m_message_handlers.invoke(msg, window, msg, wParam, lParam);
