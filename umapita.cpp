@@ -56,17 +56,12 @@ static void delete_tasktray_icon(Window window) {
   Shell_NotifyIcon(NIM_DELETE, &nid);
 }
 
-static void show_popup_menu(Window window, BOOL isTray = FALSE) {
-  POINT point;
-  TPMPARAMS tpmp = Win32::make_sized_pod<TPMPARAMS>(), *pTpmp = nullptr;
 
-  if (isTray) {
-    if (auto shell = Window::find(TEXT("Shell_TrayWnd"), nullptr); shell) {
-      auto rect = shell.get_window_rect();
-      tpmp.rcExclude = rect;
-      pTpmp = &tpmp;
-    }
-  }
+//
+// ポップアップメニュー
+//
+static void show_popup_menu(Window window, TPMPARAMS *pTpmp = nullptr) {
+  POINT point;
 
   GetCursorPos(&point);
   window.set_foreground();
@@ -715,9 +710,16 @@ static CALLBACK INT_PTR main_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPA
 
   case WM_TASKTRAY:
     switch (lParam) {
-    case WM_RBUTTONDOWN:
-      show_popup_menu(dialog, TRUE);
+    case WM_RBUTTONDOWN: {
+      TPMPARAMS tpmp = Win32::make_sized_pod<TPMPARAMS>(), *pTpmp = nullptr;
+      if (auto shell = Window::find(TEXT("Shell_TrayWnd"), nullptr); shell) {
+        auto rect = shell.get_window_rect();
+        tpmp.rcExclude = rect;
+        pTpmp = &tpmp;
+      }
+      show_popup_menu(dialog, pTpmp);
       return TRUE;
+    }
 
     case WM_LBUTTONDOWN:
       // show / hide main dialog
