@@ -204,6 +204,8 @@ public:
   T set_dialog_user_data(T v) const { return set_long_ptr(DWLP_USER, v); }
   WNDPROC get_wndproc() const { return get_long_ptr<WNDPROC>(GWLP_WNDPROC); }
   WNDPROC set_wndproc(WNDPROC p) const { return set_long_ptr(GWLP_WNDPROC, p); }
+  DLGPROC get_dlgproc() const { return get_long_ptr<DLGPROC>(DWLP_DLGPROC); }
+  DLGPROC set_dlgproc(DLGPROC p) const { return set_long_ptr(DWLP_DLGPROC, p); }
   HINSTANCE get_instance() const { return get_long_ptr<HINSTANCE>(GWLP_HINSTANCE); }
   int message_box(StrPtr text, StrPtr caption, UINT uType) const {
     return MessageBox(get(), text.ptr, caption.ptr, uType);
