@@ -700,18 +700,13 @@ private:
           return TRUE;
         });
     }
-    add_tasktray_icon(s_appIconSm.get());
-    get_window().post(WM_TIMER, TIMER_ID, 0);
-    get_window().set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
-    m_monitors = UmapitaMonitors{};
-    m_isDialogChanged = true;
-    return TRUE;
-  }
+    get_window().post(s_msgTaskbarCreated, 0, 0);
 
-  MessageHandlers::MaybeResult h_destroy() {
-    m_verticalGroupBox.restore_window_proc();
-    m_horizontalGroupBox.restore_window_proc();
-    PostQuitMessage(0);
+    get_window().post(WM_DISPLAYCHANGE, 0, 0);
+
+    m_isDialogChanged = true;
+    get_window().post(WM_TIMER, TIMER_ID, 0);
+
     return TRUE;
   }
 
@@ -737,21 +732,6 @@ private:
       return TRUE;
     }
     return FALSE;
-  }
-
-  static CommandHandlers::MaybeResult h_sc_minimize(Window dialog) {
-    dialog.post(WM_COMMAND, IDC_HIDE, 0);
-    return TRUE;
-  }
-
-  static CommandHandlers::MaybeResult h_sc_quit(Window dialog) {
-    dialog.post(WM_COMMAND, IDC_QUIT, 0);
-    return TRUE;
-  }
-
-  MessageHandlers::MaybeResult h_rbuttondown() {
-    show_popup_menu();
-    return TRUE;
   }
 
   MessageHandlers::MaybeResult h_timer() {
@@ -781,11 +761,6 @@ private:
       }
     }
     get_window().set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
-    return TRUE;
-  }
-
-  MessageHandlers::MaybeResult h_displaychange() {
-    m_monitors = UmapitaMonitors{};
     return TRUE;
   }
 
@@ -839,11 +814,6 @@ private:
     return TRUE;
   }
 
-  MessageHandlers::MaybeResult h_taskbar_created() {
-    add_tasktray_icon(s_appIconSm.get());
-    return TRUE;
-  }
-
   static void register_main_dialog_class(HINSTANCE hInst) {
     auto wc = Win32::make_sized_pod<WNDCLASSEX>();
     wc.style = 0;
@@ -882,13 +852,21 @@ public:
   MainDialogBox(HINSTANCE hInst, Window owner = Window{}) {
     init_instance(hInst);
     register_message(WM_INITDIALOG, Win32::Handler::binder(*this, h_initdialog));
-    register_message(WM_DESTROY, Win32::Handler::binder(*this, h_destroy));
+    register_message(
+      WM_DESTROY,
+      [this] {
+        m_verticalGroupBox.restore_window_proc();
+        m_horizontalGroupBox.restore_window_proc();
+        PostQuitMessage(0);
+        return TRUE;
+      });
+    register_message(s_msgTaskbarCreated, [this] { add_tasktray_icon(s_appIconSm.get()); return TRUE; });
     register_message(WM_TASKTRAY, Win32::Handler::binder(*this, h_tasktray));
-    register_system_command(SC_MINIMIZE, h_sc_minimize);
-    register_system_command(IDC_QUIT, h_sc_quit);
-    register_message(WM_RBUTTONDOWN, Win32::Handler::binder(*this, h_rbuttondown));
+    register_system_command(SC_MINIMIZE, [](Window dialog) { dialog.post(WM_COMMAND, IDC_HIDE, 0); return TRUE; });
+    register_system_command(IDC_QUIT, [](Window dialog) { dialog.post(WM_COMMAND, IDC_QUIT, 0); return TRUE; });
+    register_message(WM_RBUTTONDOWN, [this] { show_popup_menu(); return TRUE; });
     register_message(WM_TIMER, Win32::Handler::binder(*this, h_timer));
-    register_message(WM_DISPLAYCHANGE, Win32::Handler::binder(*this, h_displaychange));
+    register_message(WM_DISPLAYCHANGE, [this] { m_monitors = UmapitaMonitors{}; return TRUE; });
     register_message(WM_SETFONT, Win32::Handler::binder(*this, h_setfont));
     register_message(WM_CHANGE_PROFILE, Win32::Handler::binder(*this, h_change_profile));
     register_message(WM_KEYHOOK, Win32::Handler::binder(*this, h_keyhook));
