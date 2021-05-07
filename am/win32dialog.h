@@ -17,21 +17,35 @@ private:
   CommandHandlers m_command_handlers;
   CommandHandlers m_system_command_handlers;
   //
+  static Impl *&get_initial_holder() {
+    static AM_TLS_SPEC Impl *instance;
+    return instance;
+  }
+  static INT_PTR CALLBACK s_initial_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    Window window{hWnd};
+    Impl *&instance = get_initial_holder();
+    if (instance == nullptr) {
+      Log::fatal(TEXT("Dialog: cannot get instance in s_initial_dialog_proc"));
+      abort();
+    }
+    Impl *self = instance;
+    self->m_window = hWnd;
+    window.set_dialog_user_data(self);
+    instance = nullptr;
+    if (window.set_dlgproc(&s_dialog_proc) != &s_initial_dialog_proc) {
+      Log::fatal(TEXT("Dialog: unmatch s_initial_dialog_proc"));
+      abort();
+    }
+    return AM::try_or([&] { return self->dialog_proc(window, msg, wParam, lParam); }, FALSE);
+  }
   static INT_PTR CALLBACK s_dialog_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     Window window{hWnd};
-    Impl *self;
-    if (msg == WM_INITDIALOG) {
-      SetWindowLongPtr(hWnd, DWLP_USER, lParam);
-      self = reinterpret_cast<Impl *>(lParam);
-      self->m_window = hWnd;
-    } else {
-      self = reinterpret_cast<Impl *>(GetWindowLongPtr(hWnd, DWLP_USER));
+    Impl *self = window.get_dialog_user_data<Impl *>();
+    if (!self) {
+      Log::fatal(TEXT("Dialog: cannot get instance in s_dialog_proc"));
+      abort();
     }
-    return AM::try_or([&] {
-                        if (!self)
-                          return Impl::s_pre_init(window, msg, wParam, lParam);
-                        return self->dialog_proc(hWnd, msg, wParam, lParam);
-                      }, FALSE);
+    return AM::try_or([&] { return self->dialog_proc(window, msg, wParam, lParam); }, FALSE);
   }
   CommandHandlers::MaybeResult wm_command_handler(Window window, UINT msg, WPARAM wParam, LPARAM lParam) {
     return m_command_handlers.invoke(LOWORD(wParam), window, msg, wParam, lParam);
@@ -61,19 +75,25 @@ protected:
   void register_system_command(int id, Fn handler) {
     m_system_command_handlers.register_handler(id, handler);
   }
-  static INT_PTR s_pre_init(Window, UINT, WPARAM, LPARAM) {
-    return FALSE;
-  }
   INT_PTR open_modal(Window owner) {
     HINSTANCE hInst = owner ? owner.get_instance() : reinterpret_cast<HINSTANCE>(GetModuleHandle(nullptr));
     m_owner = owner;
-    return DialogBoxParam(hInst, Impl::get_dialog_template_name(), owner.get(), &s_dialog_proc, reinterpret_cast<LPARAM>(static_cast<Impl *>(this)));
+    if (get_initial_holder() != nullptr) {
+      Log::fatal(TEXT("Dialog: other initial instance exists on the same thread"));
+      abort();
+    }
+    get_initial_holder() = static_cast<Impl *>(this);
+    return DialogBox(hInst, Impl::get_dialog_template_name(), owner.get(), &s_initial_dialog_proc);
   }
-  Window create_modeless(Window owner) {
+  void create_modeless(Window owner) {
     HINSTANCE hInst = owner ? owner.get_instance() : reinterpret_cast<HINSTANCE>(GetModuleHandle(nullptr));
     m_owner = owner;
-    m_window = CreateDialogParam(hInst, Impl::get_dialog_template_name(), owner.get(), &s_dialog_proc, reinterpret_cast<LPARAM>(static_cast<Impl *>(this)));
-    return m_window;
+    if (get_initial_holder() != nullptr) {
+      Log::fatal(TEXT("Dialog: other initial instance exists on the same thread"));
+      abort();
+    }
+    get_initial_holder() = static_cast<Impl *>(this);
+    throw_if<Win32ErrorCode, HWND, nullptr>(CreateDialog(hInst, Impl::get_dialog_template_name(), owner.get(), &s_initial_dialog_proc));
   }
 };
 
