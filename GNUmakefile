@@ -34,7 +34,7 @@ VER_3 ?= $(REV)
 _AMOUTDIR = $(_OUTDIR)/am
 SRCS = $(wildcard am/*.cpp) umapita.cpp umapita_registry.cpp umapita_save_dialog_box.cpp umapita_target_status.cpp
 OBJS = $(SRCS:%.cpp=$(_OUTDIR)/%.o)
-DEPS = $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
+DEPS = $(_AMOUTDIR)/pch.h.d $(_OUTDIR)/pch.h.d $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
 RC_SRCS = umapita_res.rc
 RC_DEPENDS = umapita_res.h
 RES = $(RC_SRCS:%.rc=$(_OUTDIR)/%.res)
@@ -93,6 +93,12 @@ $(_OUTDIR)/%.o: %.cpp $(_OUTDIR)/pch.h.gch | $(_OUTDIR) $(_AMOUTDIR)
 
 $(_OUTDIR)/%.d: %.cpp | $(_OUTDIR) $(_AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.o} $<
+
+$(_OUTDIR)/pch.h.d: pch.h | $(_OUTDIR) $(_AMOUTDIR)
+	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.gch} $<
+
+$(_AMOUTDIR)/pch.h.d: am/pch.h | $(_OUTDIR) $(_AMOUTDIR)
+	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.gch} $<
 
 $(_OUTDIR):
 	@test -e $(_OUTDIR) || mkdir $(_OUTDIR)
