@@ -23,6 +23,7 @@ endif
 endif
 OUTDIR ?= out
 _OUTDIR ?= $(OUTDIR)
+ARCHIVE_DIR ?= archive
 
 VER ?= $(shell git name-rev --tags --name-only --refs '20[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9]' HEAD | head -1)
 VER_0 ?= 1
@@ -58,10 +59,10 @@ debug:
 	@$(MAKE) --no-print-directory EXECUTION_LEVEL=asInvoker UI_ACCESS=false SUBSYSTEM=console OUTDIR=out.debug all
 
 release:
-	@$(MAKE) --no-print-directory _release OUTDIR=out.release VER=$(VER)
+	@$(MAKE) --no-print-directory _release OUTDIR=out.release VER=$(VER) ARCHIVE_DIR=$(ARCHIVE_DIR)
 
-_RELEASE_ZIP = umapita-$(VER).zip
-_release:
+_RELEASE_ZIP = $(ARCHIVE_DIR)/umapita-$(VER).zip
+_release: $(ARCHIVE_DIR)
 	@+test x$(VER) != x"undefined" || (echo error: VER is undefined. >&2; exit 1)
 	@+test x$(VER) != x"" || (echo error: VER not defined. >&2; exit 1)
 	rm -rf $(_OUTDIR)
@@ -98,6 +99,9 @@ $(_OUTDIR):
 
 $(_AMOUTDIR): $(_OUTDIR)
 	@test -e $(_AMOUTDIR) || mkdir $(_AMOUTDIR)
+
+$(ARCHIVE_DIR):
+	@test -e $(ARCHIVE_DIR) || mkdir $(ARCHIVE_DIR)
 
 $(RES): $(RC_SRCS) $(RC_DEPENDS) $(MANIFEST) umapita.ico | $(_OUTDIR)
 	$(WINDRES) -I$(_OUTDIR) $(WINDRES_VERDEF) --output-format=coff -o $@ $<
