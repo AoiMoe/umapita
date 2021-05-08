@@ -68,7 +68,7 @@ _release: $(ARCHIVE_DIR)
 	rm -rf $(_OUTDIR)
 	@$(MAKE) --no-print-directory OUTDIR=$(OUTDIR) all
 	rm -f $(_RELEASE_ZIP)
-	zip -j $(_RELEASE_ZIP) README.md $(EXE) $(KEYHOOK_DLL)
+	zip -j $(_RELEASE_ZIP) README.md LICENSE $(EXE) $(KEYHOOK_DLL)
 
 _dep: $(DEPS)
 
