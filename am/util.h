@@ -2,6 +2,9 @@
 
 #include "am/log.h"
 
+// XXX: __declspec(thread)
+#define AM_TLS_SPEC __thread
+
 namespace AM {
 
 //
@@ -71,7 +74,7 @@ auto try_orelse(F f, G of) -> std::enable_if_t<std::is_void_v<std::invoke_result
 }
 
 template <typename F, typename G>
-auto try_orelse(F f, G of) -> std::enable_if_t<std::is_void_v<std::invoke_result_t<F>>, std::invoke_result_t<F>> {
+auto try_orelse(F f, G of) -> std::enable_if_t<!std::is_void_v<std::invoke_result_t<F>>, std::invoke_result_t<F>> {
   static_assert(std::is_same_v<std::invoke_result_t<F>, std::invoke_result_t<G>>);
   try {
     return f();
@@ -141,5 +144,15 @@ struct ErrorCode : public RuntimeError<ErrorCode<Code, OK, Identifier>> {
   }
 };
 
+//
+// tuple
+//
+template <std::size_t i=0, typename Fn, typename ...Args>
+void tuple_foreach(const std::tuple<Args...> &t, [[maybe_unused]] Fn f) {
+  if constexpr (i < sizeof...(Args)) {
+    f(std::get<i>(t));
+    tuple_foreach<i+1>(t, f);
+  }
+}
 
 } // namespace AM

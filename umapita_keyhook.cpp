@@ -1,4 +1,5 @@
 #include "pch.h"
+#define UMAPITA_KEYHOOK_DLL
 #include "umapita_keyhook.h"
 
 #define DPR(a)
@@ -51,9 +52,9 @@ static bool disable_keyhook() {
   return false;
 }
 
-static const KeyhookEntry keyhook_entry = {&enable_keyhook, &disable_keyhook, &is_keyhook_enabled};
+static const Bits_::KeyhookEntry keyhook_entry = {.enable = &enable_keyhook, .disable = &disable_keyhook, .is_enabled = &is_keyhook_enabled};
 extern "C" {
-  __declspec(dllexport) const KeyhookEntry *get_entry() {
+  __declspec(dllexport) const Bits_::KeyhookEntry *get_entry() {
     return &keyhook_entry;
   }
 }
