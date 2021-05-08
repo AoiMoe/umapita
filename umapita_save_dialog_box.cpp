@@ -14,14 +14,16 @@ using AM::Log;
 using Win32::Window;
 
 UmapitaSaveDialogBox::UmapitaSaveDialogBox(Kind kind, AM::Win32::StrPtr oldname) : m_kind(kind), m_profileName(oldname.ptr) {
-  using namespace std::placeholders;
+  auto update_idok = [this](Window dialog, const Win32::tstring &newName) {
+                       dialog.get_item(IDOK).enable(!newName.empty() && (m_kind == Save || m_profileName != newName));
+                     };
   register_message(
     WM_INITDIALOG,
-    [&](Window dialog) {
+    [this, update_idok](Window dialog) {
       auto hInst = dialog.get_instance();
       Umapita::fill_string_list_to_combobox(dialog.get_item(IDC_SELECT_PROFILE), UmapitaRegistry::enum_profile());
       dialog.get_item(IDC_SELECT_PROFILE).set_text(m_profileName);
-      dialog.get_item(IDOK).enable(false);
+      update_idok(dialog, m_profileName);
       dialog.set_text(Win32::load_string(hInst, Save ? IDS_SAVE_AS_TITLE : IDS_RENAME_TITLE));
       auto detail = Win32::load_string(hInst, m_kind == Save ? IDS_SAVE_AS_DETAIL : IDS_RENAME_DETAIL);
       dialog.get_item(IDC_SAVE_DETAIL).set_text(Win32::asprintf(detail, m_profileName.c_str()));
@@ -30,7 +32,7 @@ UmapitaSaveDialogBox::UmapitaSaveDialogBox(Kind kind, AM::Win32::StrPtr oldname)
     });
   register_command(
     IDOK,
-    [&](Window dialog) {
+    [this](Window dialog) {
       auto n = Win32::remove_ws_on_both_ends(dialog.get_item(IDC_SELECT_PROFILE).get_text());
       if (n.empty())
         return TRUE;
@@ -50,20 +52,27 @@ UmapitaSaveDialogBox::UmapitaSaveDialogBox(Kind kind, AM::Win32::StrPtr oldname)
     });
   register_command(
     IDCANCEL,
-    [&](Window dialog) {
+    [this](Window dialog) {
       dialog.end_dialog(IDCANCEL);
       return TRUE;
     });
   register_command(
     IDC_SELECT_PROFILE,
-    [&](Window dialog, Window control, int, int notify) {
+    [this, update_idok](Window dialog, Window control, int, int notify) {
       switch (notify) {
-      case CBN_SELCHANGE:
-        dialog.get_item(IDOK).enable(true);
+      case CBN_SELCHANGE: {
+        auto n = ComboBox_GetCurSel(control.get());
+        auto len = ComboBox_GetLBTextLen(control.get(), n);
+        if (len == CB_ERR) {
+          Log::info(TEXT("profile %d is not valid"), static_cast<int>(n));
+          return TRUE;
+        }
+        auto str = Win32::get_sz(len, [control, n](LPTSTR buf, std::size_t len) { ComboBox_GetLBText(control.get(), n, buf); });
+        update_idok(dialog, str);
         return TRUE;
+      }
       case CBN_EDITCHANGE: {
-        auto n = Win32::remove_ws_on_both_ends(control.get_text());
-        dialog.get_item(IDOK).enable(!n.empty() && m_profileName != n);
+        update_idok(dialog, Win32::remove_ws_on_both_ends(control.get_text()));
         return TRUE;
       }
       }
