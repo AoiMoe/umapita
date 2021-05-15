@@ -53,7 +53,7 @@ WINDRES_VERDEF = -DVERSTR=\\\"$(VERSTR)\\\" -DVER_0=$(VER_0) -DVER_1=$(VER_1) -D
 
 .PHONY: all clean debug release
 
-all: $(EXE)
+all: $(EXE) $(KEYHOOK_DLL)
 
 debug:
 	@$(MAKE) --no-print-directory EXECUTION_LEVEL=asInvoker UI_ACCESS=false SUBSYSTEM=console OUTDIR=out.debug all
@@ -76,8 +76,8 @@ _keyhook_dep: $(KEYHOOK_DEPS)
 
 -include $(DEPS) $(KEYHOOK_DEPS)
 
-$(EXE): $(OBJS) $(RES) $(KEYHOOK_DLL) | _dep
-	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(KEYHOOK_DLL) $(LIBS)
+$(EXE): $(OBJS) $(RES) | _dep
+	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(LIBS)
 
 $(KEYHOOK_DLL): $(KEYHOOK_OBJS) | _keyhook_dep
 	$(CXX) -static -shared $(CXXFLAGS) -g -o $@ $(KEYHOOK_OBJS) $(KEYHOOK_LIBS)
