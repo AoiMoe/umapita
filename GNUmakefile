@@ -14,13 +14,20 @@ export MSYSTEM
 ifeq ($(MSYSTEM),MINGW32)
 TARGET_ARCH ?= X86
 TARGET_BITS = 32bit
+TARGET_TRIPLET = i686-w64-mingw32
 else
 TARGET_ARCH ?= AMD64
 TARGET_BITS = 64bit
+TARGET_TRIPLET = x86_64-w64-mingw32
 ifndef FORCE_64BIT
 $(error umapita should be compiled for 32bit target, because of keyhook)
 endif
 endif
+
+ifneq ($(shell gcc -dumpmachine),$(TARGET_TRIPLET))
+$(error gcc does not support $(TARGET_TRIPLET))
+endif
+
 OUTDIR ?= out
 _OUTDIR ?= $(OUTDIR)
 ARCHIVE_DIR ?= archive
