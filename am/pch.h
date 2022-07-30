@@ -7,6 +7,7 @@
 #include <tchar.h>
 #include <string>
 #include <exception>
+#include <stdexcept>
 #include <memory>
 #include <optional>
 #include <type_traits>
