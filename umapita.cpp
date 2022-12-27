@@ -814,6 +814,12 @@ private:
     return TRUE;
   }
 
+  void reset_monitors() {
+    Log::debug(TEXT("reset monitors"));
+    m_monitors = UmapitaMonitors{};
+    m_isDialogChanged = true;
+  }
+
   static void register_main_dialog_class(HINSTANCE hInst) {
     auto wc = Win32::make_sized_pod<WNDCLASSEX>();
     wc.style = 0;
@@ -866,7 +872,8 @@ public:
     register_system_command(IDC_QUIT, [](Window dialog) { dialog.post(WM_COMMAND, IDC_QUIT, 0); return TRUE; });
     register_message(WM_RBUTTONDOWN, [this] { show_popup_menu(); return TRUE; });
     register_message(WM_TIMER, Win32::Handler::binder(*this, h_timer));
-    register_message(WM_DISPLAYCHANGE, [this] { m_monitors = UmapitaMonitors{}; return TRUE; });
+    register_message(WM_DISPLAYCHANGE, [this] { reset_monitors(); return TRUE; });
+    register_message(WM_SETTINGCHANGE, [this] { reset_monitors(); return TRUE; });
     register_message(WM_SETFONT, Win32::Handler::binder(*this, h_setfont));
     register_message(WM_CHANGE_PROFILE, Win32::Handler::binder(*this, h_change_profile));
     register_message(WM_KEYHOOK, Win32::Handler::binder(*this, h_keyhook));
