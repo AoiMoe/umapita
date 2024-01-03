@@ -1,5 +1,8 @@
+AM_TOP := deps/amwin32
+-include deps/amwin32/am.gmk
+
 CXX ?= g++
-CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 -I. -I$(_OUTDIR)
+CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 $(AM_CXXFLAGS) -I$(_OUTDIR)
 WINDRES ?= LANG=C windres
 LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
 KEYHOOK_LIBS ?= -luser32
@@ -39,9 +42,9 @@ VER_2 ?= $(MONTHDAY)
 VER_3 ?= $(REV)
 
 _AMOUTDIR = $(_OUTDIR)/am
-SRCS = $(wildcard am/*.cpp) umapita.cpp umapita_registry.cpp umapita_save_dialog_box.cpp umapita_target_status.cpp
-OBJS = $(SRCS:%.cpp=$(_OUTDIR)/%.o)
-DEPS = $(_AMOUTDIR)/pch.h.d $(_OUTDIR)/pch.h.d $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
+SRCS = umapita.cpp umapita_registry.cpp umapita_save_dialog_box.cpp umapita_target_status.cpp
+OBJS = $(AM_SRCS:%.cpp=$(_OUTDIR)/%.o) $(SRCS:%.cpp=$(_OUTDIR)/%.o)
+DEPS = $(_AMOUTDIR)/pch.h.d $(_OUTDIR)/pch.h.d $(AM_SRCS:%.cpp=$(_OUTDIR)/%.d) $(OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
 RC_SRCS = umapita_res.rc
 RC_DEPENDS = umapita_res.h
 RES = $(RC_SRCS:%.rc=$(_OUTDIR)/%.res)
@@ -89,10 +92,10 @@ $(EXE): $(OBJS) $(RES) | _dep
 $(KEYHOOK_DLL): $(KEYHOOK_OBJS) | _keyhook_dep
 	$(CXX) -static -shared $(CXXFLAGS) -g -o $@ $(KEYHOOK_OBJS) $(KEYHOOK_LIBS)
 
-$(_OUTDIR)/pch.h.gch: pch.h am/pch.h | $(_OUTDIR)
+$(_OUTDIR)/pch.h.gch: pch.h $(AM_TOP)/am/pch.h | $(_OUTDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-$(_AMOUTDIR)/pch.h.gch: am/pch.h | $(_AMOUTDIR)
+$(_AMOUTDIR)/pch.h.gch: $(AM_TOP)/am/pch.h | $(_AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 $(_OUTDIR)/%.o: %.cpp $(_OUTDIR)/pch.h.gch | $(_OUTDIR) $(_AMOUTDIR)
@@ -101,10 +104,16 @@ $(_OUTDIR)/%.o: %.cpp $(_OUTDIR)/pch.h.gch | $(_OUTDIR) $(_AMOUTDIR)
 $(_OUTDIR)/%.d: %.cpp | $(_OUTDIR) $(_AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.o} $<
 
+$(_OUTDIR)/%.o: $(AM_TOP)/%.cpp $(_OUTDIR)/pch.h.gch | $(_OUTDIR) $(_AMOUTDIR)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(_OUTDIR)/%.d: $(AM_TOP)/%.cpp | $(_OUTDIR) $(_AMOUTDIR)
+	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.o} $<
+
 $(_OUTDIR)/pch.h.d: pch.h | $(_OUTDIR) $(_AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.gch} $<
 
-$(_AMOUTDIR)/pch.h.d: am/pch.h | $(_OUTDIR) $(_AMOUTDIR)
+$(_AMOUTDIR)/pch.h.d: $(AM_TOP)/am/pch.h | $(_OUTDIR) $(_AMOUTDIR)
 	$(CXX) $(CXXFLAGS) -MM -MF $@ -MT ${@:.d=.gch} $<
 
 $(_OUTDIR):
