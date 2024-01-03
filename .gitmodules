@@ -1,0 +1,3 @@
+[submodule "deps/amwin32"]
+	path = deps/amwin32
+	url = https://github.com/AoiMoe/amwin32.git

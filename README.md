@@ -22,7 +22,7 @@ https://github.com/AoiMoe/umapita/releases から umapita-YYYYMMDD-NN.zip みた
 
 ## ビルド方法
 ビルド環境は msys2 専用。
-ただし、TCHAR およびキーフックの都合により、mingw の 32bit アプリケーションとしてコンパイルする必要があります。
+ただし、TCHAR の都合により mingw でなければならず、また、キーフックの都合により 32bit アプリケーションとしてコンパイルする必要があります。
 つまり msys2 ネイティブな gcc ではなく `mingw-w64-i686-gcc` をインストールする必要があります。
 - コンパイル確認しているバージョンは `mingw32/mingw-w64-i686-gcc` の 12.1.0-3
 - `/mingw32/bin` にパスが通っている必要があります
