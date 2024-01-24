@@ -16,10 +16,18 @@ export MSYSTEM
 
 ifeq ($(MSYSTEM),MINGW32)
 TARGET_ARCH ?= X86
+else ifeq ($(MSYSTEM),MINGW64)
+TARGET_ARCH ?= AMD64
+else ifeq ($(MSYSTEM),UCRT64)
+TARGET_ARCH ?= AMD64
+else
+$(error unknown MSYSTEM variant: $(MSYSTEM))
+endif
+
+ifeq ($(TARGET_ARCH),X86)
 TARGET_BITS = 32bit
 TARGET_TRIPLET = i686-w64-mingw32
-else
-TARGET_ARCH ?= AMD64
+else ifeq ($(TARGET_ARCH),AMD64)
 TARGET_BITS = 64bit
 TARGET_TRIPLET = x86_64-w64-mingw32
 ifndef FORCE_64BIT
