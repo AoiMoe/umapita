@@ -6,6 +6,7 @@ constexpr UINT WM_KEYHOOK = WM_USER+0x1002;
 constexpr UINT TASKTRAY_ID = 1;
 constexpr UINT TIMER_ID = 1;
 constexpr UINT TIMER_PERIOD = 200;
+constexpr int HOT_KEY_ID_BASE = 1;
 constexpr TCHAR TARGET_WINDOW_CLASS[] = TEXT("UnityWndClass");
 constexpr TCHAR TARGET_WINDOW_NAME[] = TEXT("umamusume");
 constexpr int MIN_WIDTH = 100;
