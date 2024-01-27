@@ -13,7 +13,6 @@
 #include "umapita_custom_group_box.h"
 #include "umapita_save_dialog_box.h"
 #include "umapita_target_status.h"
-#include "umapita_keyhook.h"
 #include "umapita_res.h"
 
 namespace Win32 = AM::Win32;
@@ -49,6 +48,7 @@ private:
   bool m_isDialogChanged = false;
   UmapitaSetting::Global m_currentGlobalSetting{UmapitaSetting::DEFAULT_GLOBAL.clone<Win32::tstring>()};
   int m_enterCount = 0;
+  bool m_isHotKeyEnabled = false;
 
   //
   // タスクトレイアイコン
@@ -746,22 +746,42 @@ private:
       if (m_currentGlobalSetting.common.isEnabled)
         m_lastTargetStatus.adjust(m_monitors, m_currentGlobalSetting.currentProfile);
       update_target_status_text(m_lastTargetStatus);
-      // キーフックの調整
-      if (KeyHook::is_available()) {
-        bool isEn = KeyHook::is_enabled();
-        if (!isEn && ts.window && m_currentGlobalSetting.common.isEnabled) {
-          // 調整が有効なのにキーフックが無効な時はキーフックを有効にする
-          auto ret = KeyHook::enable(get_window().get(), WM_KEYHOOK, ts.window.get_thread_process_id().first);
-          Log::info(TEXT("enable_keyhook %hs"), ret ? "succeeded":"failed");
-        } else if (isEn && (!m_currentGlobalSetting.common.isEnabled || !ts.window)) {
-          // 調整が無効なのにキーフックが有効な時はキーフックを無効にする
-          auto ret = KeyHook::disable();
-          Log::info(TEXT("disable_keyhook %hs"), ret ? "succeeded":"failed");
-        }
+      // ホットキーの調整
+      if (m_currentGlobalSetting.common.isEnabled && m_lastTargetStatus.isFocusOn) {
+        // 調整が有効でフォーカスがターゲットにあればホットキーを有効にする
+        register_hot_keys();
+      } else {
+        // そうでなければ無効にする
+        unregister_hot_keys();
       }
     }
     get_window().set_timer(TIMER_ID, TIMER_PERIOD, nullptr);
     return TRUE;
+  }
+
+  void register_hot_keys() {
+    if (!m_isHotKeyEnabled) {
+      Log::info(TEXT("enable hot keys"));
+      m_isHotKeyEnabled = true;
+      for (int i=0; i<10; i++) {
+        int id = i+HOT_KEY_ID_BASE;
+        UINT keycode = 0x30+i;
+        if (!RegisterHotKey(get_window().get(), id, MOD_ALT, keycode)) {
+          Log::warning(TEXT("cannot set Alt+%hc as hot key"), id);
+        }
+      }
+    }
+  }
+
+  void unregister_hot_keys() {
+    if (m_isHotKeyEnabled) {
+      Log::info(TEXT("disable hot keys"));
+      m_isHotKeyEnabled = false;
+      for (int i=0; i<10; i++) {
+        int id = i+HOT_KEY_ID_BASE;
+        UnregisterHotKey(get_window().get(), id);
+      }
+    }
   }
 
   MessageHandlers::MaybeResult h_setfont(Window, UINT, WPARAM wParam, LPARAM) {
@@ -795,20 +815,17 @@ private:
     return TRUE;
   }
 
-  MessageHandlers::MaybeResult h_keyhook(Window dialog, UINT, WPARAM wParam, LPARAM lParam) {
-    Log::debug(TEXT("WM_KEYHOOK: wParam=%X, lParam=%X, enterCount=%d"),
+  MessageHandlers::MaybeResult h_hotkey(Window dialog, UINT, WPARAM wParam, LPARAM lParam) {
+    Log::debug(TEXT("WM_HOTKEY: wParam=%X, lParam=%X, enterCount=%d"),
                static_cast<unsigned>(wParam), static_cast<unsigned>(lParam), m_enterCount);
-    if (lParam & 0x80000000U) {
-      // keydown
-      if ((lParam & 0x20000000U) && wParam >= 0x30 && wParam <= 0x39) {
-        // ALT+数字
-        auto n = static_cast<WORD>(wParam & 0x0F);
-        n = (n ? n : 10) - 1;
-        if (m_enterCount == 1) {
-          // enterCount が 1 よりも大きい場合、モーダルダイアログが開いている可能性があるので送らない。
-          // モーダルダイアログが開いているときに送ると、別のモーダルダイアログが開いたり、いろいろ嫌なことが起こる。
-          dialog.post(WM_COMMAND, MAKEWPARAM(n + IDC_SEL_BEGIN, 0), 0);
-        }
+    auto n = static_cast<WORD>((wParam - HOT_KEY_ID_BASE));
+    if (n<10) {
+      n &= 0x0F;
+      n = (n ? n : 10) - 1;
+      if (m_enterCount == 1) {
+        // enterCount が 1 よりも大きい場合、モーダルダイアログが開いている可能性があるので送らない。
+        // モーダルダイアログが開いているときに送ると、別のモーダルダイアログが開いたり、いろいろ嫌なことが起こる。
+        dialog.post(WM_COMMAND, MAKEWPARAM(n + IDC_SEL_BEGIN, 0), 0);
       }
     }
     return TRUE;
@@ -876,7 +893,7 @@ public:
     register_message(WM_SETTINGCHANGE, [this] { reset_monitors(); return TRUE; });
     register_message(WM_SETFONT, Win32::Handler::binder(*this, h_setfont));
     register_message(WM_CHANGE_PROFILE, Win32::Handler::binder(*this, h_change_profile));
-    register_message(WM_KEYHOOK, Win32::Handler::binder(*this, h_keyhook));
+    register_message(WM_HOTKEY, Win32::Handler::binder(*this, h_hotkey));
     create_modeless(owner);
   }
 
@@ -905,8 +922,6 @@ int WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
     w.post(WM_COMMAND, IDC_SHOW, 0);
     return 0;
   }
-
-  KeyHook::load();
 
   return MainDialogBox{hInst}.message_loop();
 }

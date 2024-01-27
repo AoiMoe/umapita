@@ -5,7 +5,6 @@ CXX ?= g++
 CXXFLAGS ?= -Werror -Wall -Wextra -Wold-style-cast -Wno-unused-parameter -O2 -std=c++17 $(AM_CXXFLAGS) -I$(_OUTDIR)
 WINDRES ?= LANG=C windres
 LIBS ?= -lcomctl32 -lshell32 -luser32 -lgdi32
-KEYHOOK_LIBS ?= -luser32
 
 EXECUTION_LEVEL ?= highestAvailable
 UI_ACCESS ?= false
@@ -30,9 +29,6 @@ TARGET_TRIPLET = i686-w64-mingw32
 else ifeq ($(TARGET_ARCH),AMD64)
 TARGET_BITS = 64bit
 TARGET_TRIPLET = x86_64-w64-mingw32
-ifndef FORCE_64BIT
-$(error umapita should be compiled for 32bit target, because of keyhook)
-endif
 endif
 
 ifneq ($(shell gcc -dumpmachine),$(TARGET_TRIPLET))
@@ -59,10 +55,6 @@ RES = $(RC_SRCS:%.rc=$(_OUTDIR)/%.res)
 MANIFEST_SRCS = umapita.manifest.tmpl
 MANIFEST = $(MANIFEST_SRCS:%.manifest.tmpl=$(_OUTDIR)/%.manifest)
 EXE = $(_OUTDIR)/umapita.exe
-KEYHOOK_SRCS = umapita_keyhook.cpp
-KEYHOOK_OBJS = $(KEYHOOK_SRCS:%.cpp=$(_OUTDIR)/%.o)
-KEYHOOK_DEPS = $(KEYHOOK_OBJS:$(_OUTDIR)/%.o=$(_OUTDIR)/%.d)
-KEYHOOK_DLL = $(_OUTDIR)/umapita_keyhook.dll
 YEAR = $(shell echo $(VER) | sed -E 's/^(20[0-9][0-9]).*/\1/;s/undefined/0/')
 MONTHDAY = $(shell echo $(VER) | sed -E 's/.*([0-9][0-9][0-9][0-9])-.*/\1/;s/^0//;s/undefined/0/')
 REV = $(shell echo $(VER) | sed -E 's/.*-([0-9][0-9])$$/\1/;s/^0//;s/undefined/0/')
@@ -71,7 +63,7 @@ WINDRES_VERDEF = -DVERSTR=\\\"$(VERSTR)\\\" -DVER_0=$(VER_0) -DVER_1=$(VER_1) -D
 
 .PHONY: all clean debug release
 
-all: $(EXE) $(KEYHOOK_DLL)
+all: $(EXE)
 
 debug:
 	@$(MAKE) --no-print-directory EXECUTION_LEVEL=asInvoker UI_ACCESS=false SUBSYSTEM=console OUTDIR=out.debug all
@@ -86,19 +78,14 @@ _release: $(ARCHIVE_DIR)
 	rm -rf $(_OUTDIR)
 	@$(MAKE) --no-print-directory OUTDIR=$(OUTDIR) all
 	rm -f $(_RELEASE_ZIP)
-	zip -j $(_RELEASE_ZIP) README.md LICENSE $(EXE) $(KEYHOOK_DLL)
+	zip -j $(_RELEASE_ZIP) README.md LICENSE $(EXE)
 
 _dep: $(DEPS)
 
-_keyhook_dep: $(KEYHOOK_DEPS)
-
--include $(DEPS) $(KEYHOOK_DEPS)
+-include $(DEPS)
 
 $(EXE): $(OBJS) $(RES) | _dep
 	$(CXX) -static $(CXXFLAGS) -m$(SUBSYSTEM) -g -o $@ $(OBJS) $(RES) $(LIBS)
-
-$(KEYHOOK_DLL): $(KEYHOOK_OBJS) | _keyhook_dep
-	$(CXX) -static -shared $(CXXFLAGS) -g -o $@ $(KEYHOOK_OBJS) $(KEYHOOK_LIBS)
 
 $(_OUTDIR)/pch.h.gch: pch.h $(AM_TOP)/am/pch.h | $(_OUTDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<

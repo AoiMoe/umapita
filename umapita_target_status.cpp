@@ -13,7 +13,16 @@ TargetStatus TargetStatus::get(Win32::StrPtr winclass, Win32::StrPtr winname) {
   if (auto target = Window::find(winclass, winname); target) {
     try {
       auto wi = target.get_info();
-      return {target, wi.rcWindow, wi.rcClient};
+
+      // ターゲットウィンドウにフォーカスがあるかをチェックする
+      GUITHREADINFO gti;
+      gti.cbSize = sizeof (GUITHREADINFO);
+      auto ifo = false;
+      if (GetGUIThreadInfo(0, &gti)) {
+        ifo = target.get() == gti.hwndFocus;
+      }
+
+      return {target, ifo, wi.rcWindow, wi.rcClient};
     }
     catch (Win32::Win32ErrorCode &) {
     }
